@@ -514,6 +514,29 @@ extern bool          g_bSaturnBattleGame;       // [Game] BattleGame
 
 extern int           g_DcDifficulty;           // DC_DIFFICULTY_*
 
+// Western difficulty - port-added name for what the PS1 USA release, the Saturn
+// USA release all ship as their only rules (the PC release
+// and the Japanese releases are the other axis). Verified against SLUS_001.70,
+// the USA stage overlays and the Saturn GAME*.PRG modules (docs/WESTERN_DIFFICULTY.md):
+//   - enemies take the PC's "second playthrough" branch: SCENARIO_FLAG_SECOND_
+//     PLAYTHROUGH is raised for the whole session (GameStart.cpp), which also
+//     selects the second-playthrough weapon-hit table (== the PS1 / Saturn
+//     table, 200 of 200 records) and makes Jill need ink ribbons;
+//   - no auto-aim: raising a weapon never turns the player toward an enemy (the
+//     PC's reticle follow, lock-on fire and knife turn are Japanese-release
+//     behaviour); the player rotates by hand;
+//   - an ink ribbon pick-up is 2, not the PC's 3 (every PS1 / Saturn RDT says 2).
+// Always on in the Saturn (campaign and Battle Game) and in the Director's Cut's
+// STANDARD / ADVANCED / ADVANCED* (TRAINING keeps the PC rules); opt-in for the
+// PC release with [Game] WesternDifficulty=1.
+extern bool          g_bWesternDifficultyOption;   // [Game] WesternDifficulty
+static inline bool western_difficulty(void)
+{
+    return g_bWesternDifficultyOption
+        || g_bSaturnMode
+        || (g_bDcMode && g_DcDifficulty != DC_DIFFICULTY_TRAINING);
+}
+
 // The game's random stream, mode-aware (Globals.cpp). The PC release recorded
 // its demo reels against the CRT rand; the PS1 DC uses its own LCG, so DC
 // sessions must roll the PS1 sequence for demo playback to line up. Every

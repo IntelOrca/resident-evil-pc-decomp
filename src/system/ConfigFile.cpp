@@ -404,6 +404,11 @@ void ConfigFile_EnsureExists(void)
         "; who would rather not do either, and it never writes the unlock into a\n"
         "; save. Only has an effect with Mode=SATURN.\n"
         "BattleGame=%d\n"
+        "; 1 = play the PC release with the rules the PS1 / Saturn USA releases and\n"
+        "; the Director's Cut ship: second-playthrough enemies from the first run,\n"
+        "; no auto-aim, 2 ink ribbons per pick-up. Always on in Mode=SATURN and in\n"
+        "; Mode=DC (except TRAINING), so it only matters for Mode=OG.\n"
+        "WesternDifficulty=%d\n"
         "\n"
         "[Debug]\n"
         "; Master switch for the port-added debug features: F1 debug menu, F6\n"
@@ -427,6 +432,7 @@ void ConfigFile_EnsureExists(void)
         g_bPs1FmvSubtitles ? 1 : 0,
         g_bSkipUnskippableFmv ? 1 : 0,
         g_bSaturnBattleGame ? 1 : 0,
+        g_bWesternDifficultyOption ? 1 : 0,
 #ifdef _DEBUG
         1,
 #else
@@ -529,6 +535,8 @@ BOOL ConfigFile_Load(void)
     // Saturn Battle Game title item, forced on without an ending. The unlock
     // itself still lives in the save block; this only overrides the test.
     g_bSaturnBattleGame = ReadInt(path, "Game", "BattleGame", 0) != 0;
+    // Western difficulty for the PC release; Saturn and DC force it by mode.
+    g_bWesternDifficultyOption = ReadInt(path, "Game", "WesternDifficulty", 0) != 0;
     dbg_printf("[CONFIG] mode=%s overlay=%s ps1_credits=%d\n", GameModeName(g_GameMode),
                GetAssetModeName()[0] ? GetAssetModeName() : "(none)",
                g_bPs1EndingCredits ? 1 : 0);

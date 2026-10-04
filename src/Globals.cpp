@@ -2006,6 +2006,7 @@ bool           g_bPs1EndingCredits = false;
 bool           g_bPs1FmvSubtitles = false;
 bool           g_bSkipUnskippableFmv = false;
 bool           g_bSaturnBattleGame = false;
+bool           g_bWesternDifficultyOption = false;
 
 // ---------------------------------------------------------------------------
 // re1_rand / re1_srand (port-only)

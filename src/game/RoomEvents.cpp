@@ -910,9 +910,12 @@ void room_event_item_pickup(void)
     g_pickedItemId = record[8];
     unsigned char itemId = record[8];
     unsigned char quantity = record[9];
-    // ink ribbon always pickup 3 units
+    // The PC release overrides every ink ribbon pick-up to 3 units. The PS1 USA
+    // and Saturn USA take the record's own quantity, and every ribbon record in
+    // their RDTs is 2 (the PC RDTs carry 2s and 3s; tools verified the 20 PS1
+    // records), so Western difficulty (Globals.h) pins 2.
     if (itemId == ITEM_INK_RIBBONS) {
-        quantity = 3;
+        quantity = western_difficulty() ? 2 : 3;
     }
     // DC TRAINING and ADVANCED* double the pick-up: the DC's IncludeCurrentItem
     // (SLUS_005.51 0x8002ce28) shifts the record quantity left once for ammo and

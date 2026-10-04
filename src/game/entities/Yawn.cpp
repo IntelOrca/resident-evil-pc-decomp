@@ -2382,15 +2382,25 @@ void yawn_update(void)
             }
             if ((eub(ENTITY, 0x8a) & 7) == 0) {
                 // Serum taken -> the snake only takes 5 per tick instead of 15.
-                if (Flg_ck((int)&g_ScenarioFlags, SCENARIO_FLAG_SECOND_PLAYTHROUGH) == 0) {
+                //
+                // The one place Western difficulty does NOT take the PC's
+                // second-playthrough branch: the PS1 USA and DC overlays
+                // (STAGE2 / STAGE7: sh 0x800c532c, a single -0xf and no -5 and
+                // no joint test - identical in SLUS_001.70's STAGE2.EXE
+                // 0x8011673c and the DC's 0x80115fc0) and the Saturn (GAME1
+                // 0x06077FF4 / GAME5 0x0607F8CC, a flat add #-15) all do a flat
+                // 15 per tick. It equals the PC's first-playthrough branch, so
+                // Western takes that one.
+                const bool flatHit = western_difficulty();
+                if (flatHit || Flg_ck((int)&g_ScenarioFlags, SCENARIO_FLAG_SECOND_PLAYTHROUGH) == 0) {
                     g_EnemiesList[0].health = (short)(g_EnemiesList[0].health - 0xf);
                 } else {
                     g_EnemiesList[0].health = (short)(g_EnemiesList[0].health - 5);
                 }
                 // A hit on joints 0-9 (the front half) with the serum taken
-                // does another 15.
+                // does another 15 (PC second playthrough only).
                 JointStruct* hit = (JointStruct*)(uintptr_t)ENTITY->scd_target_ptr;
-                if (hit->index < 10 && Flg_ck((int)&g_ScenarioFlags, SCENARIO_FLAG_SECOND_PLAYTHROUGH) != 0) {
+                if (!flatHit && hit->index < 10 && Flg_ck((int)&g_ScenarioFlags, SCENARIO_FLAG_SECOND_PLAYTHROUGH) != 0) {
                     g_EnemiesList[0].health = (short)(g_EnemiesList[0].health - 0xf);
                 }
                 g_EnemiesList[0].angle = (short)(g_EnemiesList[0].angle

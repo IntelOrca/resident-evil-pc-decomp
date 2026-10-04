@@ -511,7 +511,15 @@ void InitializeGame(void)
     // the same (Jill needs ink ribbons, the main-hall ribbon stays, enemies hit
     // harder). Not set for attract demos - those replay recorded input against
     // the mode bits dc_apply_mode_flags() pins to STANDARD.
-    if (g_bDcMode && (g_main_state_flags2 & MSF2_ATTRACT_DEMO) == 0) {
+    //
+    // Western difficulty (Globals.h) raises the same flag: the PS1 USA and Saturn
+    // USA stage code has no scenario-flag test at all (no Flg_ck call in any USA
+    // STAGEn.EXE overlay), so every enemy runs the PC's second-playthrough
+    // branch, and the Saturn campaign / Battle Game, the DC's STANDARD and
+    // ADVANCED, and a PC game with [Game] WesternDifficulty=1 all take it from
+    // the first frame. Set after BOTH the new-game and continue branches, so a
+    // save made on the other rules still plays on this session's.
+    if ((g_bDcMode || western_difficulty()) && (g_main_state_flags2 & MSF2_ATTRACT_DEMO) == 0) {
         Flg_on((int)g_ScenarioFlags, SCENARIO_FLAG_SECOND_PLAYTHROUGH);
     }
 

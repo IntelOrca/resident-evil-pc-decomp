@@ -882,8 +882,11 @@ void ending_state(void)
     // rocket launcher, 0x800e1688). The cleared-once art swap is
     // a USA/PC behaviour the DC dropped, so in DC mode take the first-run branch
     // even though InitializeGame forces the flag for gameplay (GameStart.cpp).
+    // Western difficulty (Globals.h) raises the flag for gameplay in the Saturn
+    // and in a PC game with [Game] WesternDifficulty=1 as well, so it is not a
+    // "cleared once" marker there either.
     const char* bgPath;
-    if (g_bDcMode) {
+    if (g_bDcMode || western_difficulty()) {
         bgPath = ((g_playerEntity.id & 3) == CHAR_CHRIS)
                      ? GAME_DATA_ROOT "data\\clis01.pix"
                      : GAME_DATA_ROOT "data\\jill01.pix";
@@ -958,7 +961,7 @@ void ending_state(void)
     }
     // DC ending has no cleared-once congratulations-FMV swap (see the backdrop
     // note above).
-    if (!g_bDcMode &&
+    if (!g_bDcMode && !western_difficulty() &&
         Flg_ck((int)g_ScenarioFlags, SCENARIO_FLAG_SECOND_PLAYTHROUGH) != 0) {
         g_selectedFmvId = 26;
     }

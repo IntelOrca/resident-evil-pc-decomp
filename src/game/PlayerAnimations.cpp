@@ -4146,6 +4146,27 @@ static unsigned int player_find_aim_target(void)
 }
 
 // ============================================================================
+// Auto-aim gates (Western difficulty, Globals.h)
+// The PS1 USA / Saturn USA releases have no auto-aim: raising a weapon never
+// turns the player toward an enemy, the player rotates by hand. Verified in
+// SLUS_001.70: the gun-aim state 0 (0x8003f324) calls the reticle scan but its
+// result (entity +0x178, DAT_800c529c) is only ever written, never read, so
+// there is no reticle-follow turn; the gun hold input (0x8003f830) has no raw-pad
+// lock-on branch, so behaviour 0x1a (lock-on fire, 0x80041094) is never entered.
+// Both are the Japanese release's behaviour, which the PC release kept.
+//   player_autoaim_follow_enabled - the reticle scan and the follow turn
+//   player_lockon_enabled         - the raw-pad lock-on / knife turn entries
+// ============================================================================
+static inline bool player_autoaim_follow_enabled(void)
+{
+    return g_aimReticleEnabled != 0 && !western_difficulty();
+}
+static inline bool player_lockon_enabled(void)
+{
+    return !western_difficulty();
+}
+
+// ============================================================================
 // player_reticle_enemy @ 0x00496910
 // The aim reticle scan (live because g_aimReticleEnabled is 1 in the exe):
 // finds the nearest enemy in front, tracking standing and low (head below 1)
@@ -4315,7 +4336,7 @@ static void player_behavior_12_gun_aim(void)
         if ((g_main_state_flags2 & MSF2_EFFECT_ZONE) != 0) {
             PlayEntitySnd(0);
         }
-        if (g_aimReticleEnabled != 0) {
+        if (player_autoaim_follow_enabled()) {
             g_playerEntity.weaponAimState = (unsigned short)player_reticle_enemy();
         }
         g_playerEntity.weaponAimState |= 2;
@@ -4332,7 +4353,7 @@ static void player_behavior_12_gun_aim(void)
 
     // 0x0045797f: reticle follow - a fresh fire press drops the lock; a
     // locked target (state 3) makes the player turn toward it.
-    if (g_aimReticleEnabled != 0) {
+    if (player_autoaim_follow_enabled()) {
         if ((g_button_pressed_id & 4) != 0) {
             g_playerEntity.weaponAimState = 0;
         }
@@ -4571,7 +4592,7 @@ static void player_behavior_13_gun_hold_input(void)
         }
     }
     // Raw pad bit 4 with a target lock starts the special lock-on fire.
-    if ((g_PlayerPadHeld & 0x40) != 0 && player_find_aim_target() != 0) {
+    if (player_lockon_enabled() && (g_PlayerPadHeld & 0x40) != 0 && player_find_aim_target() != 0) {
         g_playerEntity.action_behavior = 0x1a;           // 0x00459150 - not yet transcribed
         g_playerEntity.action_state = 0;
         return;
@@ -5457,12 +5478,12 @@ static void player_behavior_12_knife_aim(void)
         g_playerEntity.isBeingAttackedFlag = 0;
         g_playerEntity.attackAnim = 5;
         g_playerEntity.unk_8c = 3;
-        if (g_aimReticleEnabled != 0) {
+        if (player_autoaim_follow_enabled()) {
             g_playerEntity.weaponAimState = (unsigned short)player_reticle_enemy();
         }
     }
 
-    if (g_aimReticleEnabled != 0) {
+    if (player_autoaim_follow_enabled()) {
         g_playerEntity.weaponAimState |= 2;
         if ((g_button_pressed_id & 4) != 0) {
             g_playerEntity.weaponAimState = 0;
@@ -5560,7 +5581,7 @@ static void player_behavior_13_knife_hold(void)
         g_playerEntity.action_state = 0;
         return;
     }
-    if ((g_PlayerPadHeld & 4) != 0 && player_find_aim_target() != 0) {
+    if (player_lockon_enabled() && (g_PlayerPadHeld & 4) != 0 && player_find_aim_target() != 0) {
         g_playerEntity.action_behavior = 0x16;   // knife auto-aim turn
         g_playerEntity.action_state = 0;
         return;

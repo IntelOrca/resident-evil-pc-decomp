@@ -101,6 +101,7 @@ of guessed. Run them from the repo root.
 **Verifiers — run them after touching what they cover**
 - `verify_msg_encoding.py` — replicates the `STR()` `Encoded` constructor and compares the encoded global messages against the original bytes.
 - `verify_msg_fixes.py` — same idea for the fixed `STR()` sources, byte for byte.
+- `verify_western_difficulty.py` — the evidence behind `western_difficulty()` (docs/WESTERN_DIFFICULTY.md): the PS1 USA weapon hit table equals the PC's second-playthrough table and all five Saturn `GAME*.PRG` copies, no USA stage overlay calls `Flg_ck`, the zombie bite table is the hard row only, and the Yawn hit is a flat 15. Needs the PS1 USA disc, the extracted Saturn disc and capstone.
 - `verify_dc_item_models.py` — cross-checks the Director's Cut item-view mapping (`ItemModels.cpp`) against the generated DC item lookup and the shipped `ITEM_M2` art, and checks `g_ItemsImageBuffer` covers the DC sprite sheet.
 - `verify_dc_entity_models.py` — the DC model table (`0x8008d03c`, via the Ghidra bridge) resolved to file names through the disc's ENEMY directory, entity id `0x16`'s handler read out of all 14 PS1 stage overlays, and the models `dc/EntityModels.cpp` names against the overlay.
 - `verify_dc_save_mode.py` — recomputes every `BioCardLayout` offset from the struct and checks it against each field's own comment, the DC mode byte → flag-bit mapping against the PS1 load path, and the overlay font's four CLUT rows against the base glyph block and the PS1 colour columns.
