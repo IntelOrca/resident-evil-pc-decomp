@@ -33,7 +33,16 @@ int saturn_title_font_load(void)
     if (s_fontState != 0) return s_fontState > 0;
     s_fontState = -1;
 
+    // The font lives in the SATURN overlay. In OG the overlay is not searched, so
+    // look in it explicitly for the length of the load (the Battle Game is
+    // offered in OG when the SATURN assets are imported).
+    char savedOverlay[16];
+    strncpy(savedOverlay, GetAssetModeName(), sizeof(savedOverlay) - 1);
+    savedOverlay[sizeof(savedOverlay) - 1] = '\0';
+    const int borrowed = !g_bSaturnMode;
+    if (borrowed) SetAssetMode("SATURN");
     const size_t n = LoadFile(GAME_DATA_ROOT "data\\titlefnt.bin", s_fontFile, 0x20);
+    if (borrowed) SetAssetMode(savedOverlay);
     if (n == (size_t)-1 || n < 8 || n > FONT_FILE_MAX) {
         dbg_printf("[TITLE] titlefnt.bin not available - Saturn title keeps the old rows\n");
         return 0;
@@ -181,10 +190,15 @@ void saturn_title_draw_main_frames(unsigned char* usaTimPage, int battleUnlocked
     }
 }
 
-unsigned int saturn_title_build_extras_page(unsigned char* out)
+// A complete 256x256 4bpp TIM in the USA sheet's grey palette and CLUT row, with
+// `frames` frames of SATURN_TITLE_FRAME_H rows, frame f drawing `items` with item
+// f bright. The extras submenu and, where the USA sheet is not the base (the
+// Director's Cut), the main menu are both this.
+static unsigned int build_sheet(unsigned char* out, const char* const* items,
+                                int count, int frames)
 {
     if (out == NULL || s_fontState <= 0) return 0;
-    if (EXTRA_COUNT * SATURN_TITLE_FRAME_H > SHEET_H) return 0;   // 4 entries at most
+    if (frames * SATURN_TITLE_FRAME_H > SHEET_H) return 0;   // 4 frames at most
 
     const unsigned int pixBytes = SHEET_STRIDE * SHEET_H;
     const unsigned int headerBytes = 0x40;
@@ -211,8 +225,18 @@ unsigned int saturn_title_build_extras_page(unsigned char* out)
     *(unsigned short*)p = SHEET_W / 4;        p += 2;
     *(unsigned short*)p = SHEET_H;            p += 2;
 
-    for (int sel = 0; sel < EXTRA_COUNT; sel++) {
-        draw_frame(p, sel * SATURN_TITLE_FRAME_H, kExtraItems, EXTRA_COUNT, sel);
+    for (int f = 0; f < frames; f++) {
+        draw_frame(p, f * SATURN_TITLE_FRAME_H, items, count, f);
     }
     return headerBytes + pixBytes;
+}
+
+unsigned int saturn_title_build_extras_page(unsigned char* out)
+{
+    return build_sheet(out, kExtraItems, EXTRA_COUNT, EXTRA_COUNT);
+}
+
+unsigned int saturn_title_build_main_page(unsigned char* out)
+{
+    return build_sheet(out, kMainItems, 3, 3);
 }

@@ -490,6 +490,16 @@ void LoadEntityEMD(Entity* em, unsigned char entity_id)
     if (g_bDcMode) {
         entity_id = dc_emd_advanced_index(entity_id);
     }
+    // A Battle Game run from a DC ADVANCED save: only the player's outfit is
+    // remapped (never the NPC / Forest zombie rows), and the arrange models are
+    // read from the DC overlay for that one load.
+    const int dcOutfitLoad = !g_bDcMode && saturn_battle_dc_outfit() &&
+                             (entity_id < 2 || entity_id == DC_EMD_INDEX_COSTUME);
+    char dcOutfitSavedOverlay[16] = "";
+    if (dcOutfitLoad) {
+        entity_id = dc_emd_advanced_index(entity_id);
+        strncpy(dcOutfitSavedOverlay, GetAssetModeName(), sizeof(dcOutfitSavedOverlay) - 1);
+    }
 
     // The Saturn's loader (Saturn GAME5 0x0604EA80) swaps the Hunter's model for
     // the Tick's on stage index 2, before the table is read. The entity keeps
@@ -521,7 +531,9 @@ void LoadEntityEMD(Entity* em, unsigned char entity_id)
     sprintf(FILE_PATH, "%s%s", GAME_DATA_ROOT, emdPath);
     SetSpriteBufferFlag();
 
+    if (dcOutfitLoad) SetAssetMode("DC");
     unsigned int fileSize = LoadFile(FILE_PATH, g_loadDataDestPointer, 32);
+    if (dcOutfitLoad) SetAssetMode(dcOutfitSavedOverlay);
     int data_pointer = (int)g_loadDataDestPointer;
 
     if ((g_main_state_flags2 & MSF2_COSTUME_VARIANT) != 0 && (unsigned int)g_bCostumeVariant - entity_id == -51) {

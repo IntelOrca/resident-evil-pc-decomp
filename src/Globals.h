@@ -478,8 +478,9 @@ extern bool          g_bSkipUnskippableFmv;    // [Game] SkipUnskippableFmv
 // cheat on the title's press-start screen (TITLE.PRG 0x0602DD70), neither of
 // which a PC player is going to reproduce. This is a read-time override only:
 // it never writes the card byte, so a save made with it on still records
-// whatever the game itself earned. Saturn mode only, in effect - see
-// saturn_battle_is_unlocked() in src/game/saturn/SaturnBattle.h.
+// whatever the game itself earned. Any mode: OG and DC show the item too when the
+// SATURN/ assets are imported (saturn_battle_offered() in
+// src/game/saturn/SaturnBattle.h) and run the Battle Game in Saturn mode.
 extern bool          g_bSaturnBattleGame;       // [Game] BattleGame
 
 // Every "are we in Director's Cut mode" test in the port. Deliberately a macro
@@ -1181,7 +1182,7 @@ extern short         g_titleDemoTime;                  // 0x00d22788
 // ADVANCED option - the PS1 overlay's g_titleHoldTimer (0x800e16ca), which the
 // PC build has no equivalent of because it has no submenu.
 extern unsigned char g_titleHoldTimer;
-extern short         g_titleTexturePageData[8];       // 0x00d22778 - per-selection tpage
+extern short         g_titleTexturePageData[12];       // 0x00d22778 - per-selection tpage
 extern int           g_sceneRenderParam;               // 0x004d6300
 extern DWORD         g_titlePrimType;                  // 0x004d6398
 extern DWORD         g_primParam;                      // 0x004d63e0

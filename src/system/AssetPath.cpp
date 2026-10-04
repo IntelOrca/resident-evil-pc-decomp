@@ -205,28 +205,43 @@ static void ComposeAssetRoot(void)
 // shape of the base root, so an install with no [Assets] Path gets ".\dc\"
 // beside the executable in retail and "./assets/DC/" in a dev build, exactly as
 // the base tree is ".\usa\" / "./assets/USA/".
+static void ComposeModeRoot(const char* mode, char* out, size_t outSize)
+{
+    if (s_base[0] != '\0') {
+        sprintf_s(out, outSize, "%s%c%s%c", s_base, PATH_SEP, mode, PATH_SEP);
+    } else {
+#if !defined(_WIN32)
+        sprintf_s(out, outSize, "./assets/%s/", mode);
+#elif defined(_DEBUG)
+        sprintf_s(out, outSize, ".\\assets\\%s\\", mode);
+#else
+        sprintf_s(out, outSize, ".\\%s\\", mode);
+#endif
+    }
+}
+
 static void ComposeOverlayRoot(void)
 {
     if (s_modeName[0] == '\0') {
         s_overlayRoot = NULL;
         return;
     }
-    if (s_base[0] != '\0') {
-        sprintf_s(s_overlayRootBuf, sizeof(s_overlayRootBuf), "%s%c%s%c",
-                  s_base, PATH_SEP, s_modeName, PATH_SEP);
-    } else {
-#if !defined(_WIN32)
-        sprintf_s(s_overlayRootBuf, sizeof(s_overlayRootBuf),
-                  "./assets/%s/", s_modeName);
-#elif defined(_DEBUG)
-        sprintf_s(s_overlayRootBuf, sizeof(s_overlayRootBuf),
-                  ".\\assets\\%s\\", s_modeName);
-#else
-        sprintf_s(s_overlayRootBuf, sizeof(s_overlayRootBuf),
-                  ".\\%s\\", s_modeName);
-#endif
-    }
+    ComposeModeRoot(s_modeName, s_overlayRootBuf, sizeof(s_overlayRootBuf));
     s_overlayRoot = s_overlayRootBuf;
+}
+
+int AssetOverlayHasFile(const char* mode, const char* relPath)
+{
+    if (mode == NULL || mode[0] == '\0' || relPath == NULL) return 0;
+    char root[260];
+    ComposeModeRoot(mode, root, sizeof(root));
+    char candidate[300];
+    if (sprintf_s(candidate, sizeof(candidate), "%s%s", root, relPath) < 0) return 0;
+    char probeBuf[300];
+    FILE* fp = fopen(plat_normalize_path(candidate, probeBuf, sizeof(probeBuf)), "rb");
+    if (fp == NULL) return 0;
+    fclose(fp);
+    return 1;
 }
 
 void SetAssetMode(const char* mode)

@@ -38,8 +38,77 @@ int saturn_battle_is_unlocked(void)
     // [Game] BattleGame=1 is a read-time override: it makes the item available
     // without an ending and is deliberately NOT written into the card, so a
     // save made with it on still records only what the game itself earned.
-    if (g_bSaturnMode && g_bSaturnBattleGame) return 1;
+    // It works in every mode; OG and DC have no ending-based unlock (the
+    // unlock byte is Saturn-only), so the key is their only way in.
+    if (g_bSaturnBattleGame) return 1;
     return s_battleUnlocked != 0;
+}
+
+// The Battle Game's arenas are Saturn-only files, so a run needs the SATURN/
+// overlay to be imported, whatever [Game] Mode says. The 15 arena RDTs are the
+// check: they are the one thing no other tree supplies (the campaign rooms fall
+// back to the base tree), and a run without them stops on arena 1. Probed once -
+// the answer cannot change while the game is running.
+int saturn_battle_assets_present(void)
+{
+    static int s_checked = 0;
+    static int s_present = 0;
+    if (s_checked) return s_present;
+    s_checked = 1;
+
+    int missing = 0;
+    for (int arena = SATURN_BATTLE_FIRST_ROOM; arena <= SATURN_BATTLE_LAST_ROOM; arena++) {
+        char rel[40];
+        sprintf(rel, "Stage8/ROOM80%X0.RDT", arena);
+        if (!AssetOverlayHasFile("SATURN", rel)) missing++;
+    }
+    s_present = (missing == 0);
+    dbg_printf("[battle] SATURN arena assets %s (%d of %d arena RDTs missing)\n",
+               s_present ? "present" : "NOT imported", missing, SATURN_BATTLE_ARENA_COUNT);
+    return s_present;
+}
+
+int saturn_battle_offered(void)
+{
+    return saturn_battle_is_unlocked() && saturn_battle_assets_present();
+}
+
+// A run from OG or DC borrows Saturn mode: the Battle Game's code, its asset
+// overlay and its rules (Western difficulty, the Saturn enemy tables) are all
+// keyed on g_GameMode, which is the one switch (Globals.h). The mode config.ini
+// chose is put back when the player is back on the title screen.
+static int  s_savedGameMode = -1;
+static char s_savedOverlay[16] = "";
+
+// A run started from a Director's Cut ADVANCED save keeps that save's outfit
+// logic. The arrange-exclusive outfit is not a costume flag but a DC mode
+// (MSF2_DC_ADVANCED remaps the player model to EM1032/1033 in the DC overlay),
+// and Saturn mode drops both. Decided in saturn_battle_begin_run(), after the
+// save's mode byte has arrived with the card.
+static int s_battleDcOutfit = 0;
+
+int saturn_battle_dc_outfit(void)
+{
+    return g_bSaturnMode && g_saturnBattleActive && s_battleDcOutfit;
+}
+
+static void battle_enter_saturn_mode(void)
+{
+    if (g_GameMode == GAME_MODE_SATURN || s_savedGameMode >= 0) return;
+    s_savedGameMode = g_GameMode;
+    strncpy(s_savedOverlay, GetAssetModeName(), sizeof(s_savedOverlay) - 1);
+    s_savedOverlay[sizeof(s_savedOverlay) - 1] = '\0';
+    g_GameMode = GAME_MODE_SATURN;
+    SetAssetMode("SATURN");
+}
+
+void saturn_battle_restore_mode(void)
+{
+    s_battleDcOutfit = 0;
+    if (s_savedGameMode < 0) return;
+    g_GameMode = s_savedGameMode;
+    s_savedGameMode = -1;
+    SetAssetMode(s_savedOverlay);
 }
 
 void saturn_battle_unlock(void)
@@ -502,6 +571,7 @@ static void battle_apply_loadout(void)
 // them, after that memcpy.
 void saturn_battle_start_run(void)
 {
+    battle_enter_saturn_mode();
     g_saturnBattleActive = 1;
     g_roomId = SATURN_BATTLE_FIRST_ROOM;
 }
@@ -560,6 +630,10 @@ void saturn_battle_begin_run(void)
     g_roomId = SATURN_BATTLE_FIRST_ROOM;
     g_roomCameraId = 0;
     g_main_state_flags &= ~MSF_CHAR_VARIANT;
+
+    s_battleDcOutfit = (s_savedGameMode == GAME_MODE_DC &&
+                        (g_DcGameMode == DC_DIFFICULTY_ADVANCED ||
+                         g_DcGameMode == DC_DIFFICULTY_ADVANCED_HOLD));
 
     // Arm the run block. arena is left at 0, out of the table's range, so the
     // first battle_sync_arena() is what reads arena 1's fight-room bit - arena 1
@@ -1861,6 +1935,9 @@ void saturn_battle_end_run(void)
     s_battle.noAmmoFrames = 0;
     s_battleRunFrames = 0;
     s_battleFinished = 0;
+    // When the ranking follows (s_pendingOutcome set by close_run), it still
+    // needs the Saturn overlay; the title screen restores the mode afterwards.
+    if (s_pendingOutcome == BATTLE_OUTCOME_NONE) saturn_battle_restore_mode();
 }
 
 // ---------------------------------------------------------------------------

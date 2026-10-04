@@ -30,8 +30,10 @@
 //
 //
 // Nothing here runs unless g_bSaturnMode is on, and the arena redirects are all
-// keyed on g_saturnBattleActive, which only the title's third item sets. OG and
-// DC cannot reach any of it - see docs/SATURN_PORT.md.
+// keyed on g_saturnBattleActive, which only the title's Battle item sets. OG and
+// DC reach it only with [Game] BattleGame=1 and the SATURN/ assets imported, and
+// then by switching to Saturn mode for the run (saturn_battle_restore_mode) - see
+// docs/SATURN_PORT.md.
 #pragma once
 
 // The Battle Game's stage. 0-indexed, so 7 == STAGE8 == the stage byte the
@@ -84,6 +86,29 @@ int saturn_battle_arena_index(void);
 // byte g_SaturnBattleUnlocked, so it survives a save/load round trip. See
 // saturn_battle_sync_from_card.
 int saturn_battle_is_unlocked(void);
+
+// True when the SATURN/ overlay carries the 15 arena RDTs (SATURN/Stage8/
+// ROOM80?0.RDT), i.e. the asset migrator's Saturn tab has been run. Probed once.
+int saturn_battle_assets_present(void);
+
+// Whether the title screen offers the Battle Game: unlocked (an ending in Saturn
+// mode, or [Game] BattleGame=1 in any mode) AND the Saturn assets imported. This
+// is what makes the item available in OG and DC; the title uses it instead of
+// testing g_bSaturnMode.
+int saturn_battle_offered(void);
+
+// OG/DC borrow Saturn mode for the length of a run (g_GameMode and the asset
+// overlay are one switch, so there is no other way to reach the Saturn's
+// arenas, rules and enemy tables). saturn_battle_start_run() switches;
+// this puts the configured mode back. Called when a run ends without a ranking,
+// and by title_state, which the ranking and the load screen's EXIT both reach.
+// A no-op when nothing was switched.
+void saturn_battle_restore_mode(void);
+
+// True during a run started from a DC ADVANCED save: the player keeps the DC's
+// outfit logic (arrange outfit, EM1032/1033 from the DC overlay) even though the
+// run is in Saturn mode. Used by LoadEntityEMD and room_set.
+int saturn_battle_dc_outfit(void);
 
 // Raise the unlock and write it into the card, so the next save carries it. The
 // Saturn does this at the top of ENDING.PRG (0x0602DC28): any ending counts.

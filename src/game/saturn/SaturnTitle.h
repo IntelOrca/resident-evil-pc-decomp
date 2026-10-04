@@ -24,7 +24,8 @@
 // behaviour (the USA sheet's two rows plus a BATTLE GAME row built from the
 // port's 8x14 font), so a half-migrated tree still works.
 //
-// Only reachable with g_bSaturnMode; OG and DC never call any of this.
+// Used in Saturn mode, and in OG when the Battle Game is offered (the font is read
+// from the SATURN overlay either way). DC keeps its own title art.
 #pragma once
 
 // g_titleSelectionId values. 0 = PRESS START, 1/2 = NEW/LOAD GAME (as in the
@@ -45,6 +46,11 @@ void saturn_title_draw_main_frames(unsigned char* usaTimPage, int battleUnlocked
 // Builds the extras submenu sheet as a complete TIM (256x256, 4bpp, the same
 // grey palette and CLUT row as the USA sheet). Returns its size, 0 on failure.
 unsigned int saturn_title_build_extras_page(unsigned char* out);
+
+// The three main-menu frames (selection 1, 2, 3 bright, frame f at row f * 64) as a
+// sheet of their own, for the Director's Cut, whose title sheet has no room for
+// them. Same format as the extras sheet.
+unsigned int saturn_title_build_main_page(unsigned char* out);
 
 // Number of submenu entries, BACK included. Selection SATURN_TITLE_EXTRAS_FIRST
 // + n is entry n; the last one is BACK.

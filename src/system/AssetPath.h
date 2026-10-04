@@ -110,6 +110,10 @@ int          GetAssetVersion(void);
 void         SetAssetMode(const char* mode);
 // The active overlay's folder name, "" when none (OG).
 const char*  GetAssetModeName(void);
+// 1 when "<base>/<mode>/<relPath>" exists, whatever overlay is active. Lets a
+// mode borrow another mode's content (the Battle Game in OG/DC) only after
+// checking that mode's folder was actually imported.
+int          AssetOverlayHasFile(const char* mode, const char* relPath);
 
 // Rewrites whichever known asset-root form a path was compiled with (debug
 // ".\assets\USA\" or retail ".\usa\") to the current runtime root, writing the

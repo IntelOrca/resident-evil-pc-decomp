@@ -490,7 +490,7 @@ void room_set(void)
             // arrange one. The wardrobe writes characterModelId = 8 for every
             // one of the three choices, so this store is the only thing that
             // tells them apart.
-            if ((g_main_state_flags2 & MSF2_DC_ADVANCED) != 0 &&
+            if (((g_main_state_flags2 & MSF2_DC_ADVANCED) != 0 || saturn_battle_dc_outfit()) &&
                 Flg_ck((int)g_ScenarioFlags, DC_SCENARIO_FLAG_OUTFIT_A) == 0 &&
                 Flg_ck((int)g_ScenarioFlags, DC_SCENARIO_FLAG_OUTFIT_B) == 0) {
                 g_main_state_flags2 &= ~MSF2_COSTUME_VARIANT;
