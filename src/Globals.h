@@ -457,11 +457,11 @@ extern DWORD         g_MainStateFlagBank[2];           // 0x00be41c0
 //
 // GAME_MODE_OG is the PC release, which is the original PS1 game's content; it
 // uses no overlay at all, so every path resolves exactly as it did before modes
-// existed. SATURN and NDS are placeholders: their names reserve the folder and
-// the enum value, and neither has any code behind it yet.
+// existed. SATURN has code (src/game/saturn/) and an overlay; NDS is still a
+// placeholder whose name only reserves the folder and the enum value.
 #define GAME_MODE_OG                 0   // PC / original PS1 content (default)
 #define GAME_MODE_DC                 1   // Director's Cut (SLUS_005.51)
-#define GAME_MODE_SATURN             2   // reserved, not implemented
+#define GAME_MODE_SATURN             2   // Sega Saturn version
 #define GAME_MODE_NDS                3   // reserved, not implemented
 
 extern int           g_GameMode;               // [Game] Mode -> GAME_MODE_*
@@ -472,10 +472,27 @@ extern bool          g_bPs1FmvSubtitles;      // [Game] Ps1FmvSubtitles
 // and DMF/DME. Off by default, so the original's masks are what ship.
 extern bool          g_bSkipUnskippableFmv;    // [Game] SkipUnskippableFmv
 
+// Port-added: force the Saturn's Battle Game title item on, without having
+// cleared a game first. The Saturn gates that item on one flag - save byte 0xBF,
+// raised by any ending (ENDING.PRG 0x0602DC28) or by the port-2 X+Y+Z+Start
+// cheat on the title's press-start screen (TITLE.PRG 0x0602DD70), neither of
+// which a PC player is going to reproduce. This is a read-time override only:
+// it never writes the card byte, so a save made with it on still records
+// whatever the game itself earned. Saturn mode only, in effect - see
+// saturn_battle_is_unlocked() in src/game/saturn/SaturnBattle.h.
+extern bool          g_bSaturnBattleGame;       // [Game] BattleGame
+
 // Every "are we in Director's Cut mode" test in the port. Deliberately a macro
 // over g_GameMode rather than a second global: there is one stored value, so
 // the two cannot drift, and an accidental assignment fails to compile.
 #define g_bDcMode                    (g_GameMode == GAME_MODE_DC)
+
+// Every "are we in Saturn mode" test in the port, on the same one-value
+// principle as g_bDcMode: [Game] Mode picks the code branch AND the SATURN/
+// overlay folder, so the two cannot drift, and an accidental assignment fails to
+// compile. The Saturn adds only exclusive content on top of the campaign, so
+// most code never tests this - it is off in the entire DC/OG path.
+#define g_bSaturnMode                (g_GameMode == GAME_MODE_SATURN)
 
 // g_DcDifficulty is the DC title screen's choice (PS1 g_abDcGameMode
 // 0x800c8693); it is also stored in the save block, so a DC save reloads as its
@@ -573,6 +590,7 @@ void dc_apply_item_tables(void);
 // Install the Director's Cut's one zombie dispatch-table edit - the extra entry
 // that lands on behaviour 11 (Zombie.cpp). No-op when g_bDcMode is off.
 void dc_apply_zombie_tables(void);
+void saturn_apply_zombie_tables(void);   // Zombie.cpp - Saturn behaviour 9 = chase
 
 extern WORD          g_message_flags;                  // 0x00bebcc0
 
@@ -1687,8 +1705,16 @@ extern DWORD        g_animObjectBuffer[0x680];       // 0x00c133c0 - weapon anim
 // 0x00c14dc0 - Shoot direction data buffer
 extern BYTE          g_shootDirEspBuffer[73728];
 
-// 0x00c26dc0 - General purpose data buffer (832728 bytes)
-extern BYTE          g_DataBuffer[832728];
+// 0x00c26dc0 - General purpose data buffer (832728 bytes in the original).
+// The room RDT and every enemy EMD of the room load into it back to back. The
+// port adds headroom past the original size for Saturn-converted models
+// (tools/saturn_emd.py pc), whose multi-page TIMs make an EMD 2-2.5x the stock
+// size: arena 80C0 = 351 KB room + zombie + 379 KB Wesker would overrun the
+// original 832 KB. Nothing addresses the buffer past its original end, so the
+// original layout inside it is unchanged.
+#define DATA_BUFFER_ORIGINAL_SIZE  832728
+#define DATA_BUFFER_PORT_HEADROOM  0x100000
+extern BYTE          g_DataBuffer[DATA_BUFFER_ORIGINAL_SIZE + DATA_BUFFER_PORT_HEADROOM];
 
 // 0x00cf2298 - TIM Image buffer, first 20 bytes are the header
 // Buffer Size: 187180 bytes (187160 headless)
@@ -1924,6 +1950,7 @@ void update_player_position(PlayerEntity* ent, int a);// 0x0041c060
 int  check_door(unsigned char* entry);              // 0x0041b6d0 room_check_actions[5]
 int  no_room_action(unsigned char* entry);          // 0x0041c050 room_check_actions[0]
 int  door_try_enter(unsigned char* entry);           // 0x0041b400 room_check_actions[1]
+void door_begin_transition(unsigned char* record);   // 0x0041b59c hand a door record to room_transition_load
 int  display_msg_room_action(unsigned char* entry);  // 0x0041b630 room_check_actions[2]
 int  include_key(unsigned char* entry);              // 0x0041b650 room_check_actions[3]
 int  set_key_flag(unsigned char* entry);             // 0x0041b6a0 room_check_actions[4]
@@ -2047,7 +2074,11 @@ void FUN_004403c0(int param_1, int param_2, int param_3, int* param_4);
 void init_room(void);
 void room_set(void);
 void LoadRoomRdt(void);
+// Port-only: did the last LoadRoomRdt() find its file? The original returns void
+// and never fails; room_set() needs to know. (src/game/RoomInit.cpp)
+int  Room_RdtLoadFailed(void);
 void update_room_bgm(void);
+void bgm_play_group_channel(unsigned char group, int ch);  // port-added, SoundSystem.cpp
 void LoadHeldItemsImages(void);
 void load_room_bg(void);
 void load_room_bg_image(void);

@@ -4,6 +4,7 @@
 #include "../Globals.h"
 #include "dc/ItemTables.h"
 #include "dc/Items.h"
+#include "saturn/SaturnBattle.h"
 #include "../marni/MarniSystem.h"
 #include "FileLoader.h"
 #include "SpriteRenderer.h"
@@ -517,8 +518,19 @@ void InitializeGame(void)
     // Director's Cut item tables (lookup + combine); no-op for DcMode=0.
     dc_apply_item_tables();
 
+    // Sega Saturn: re-raise the Battle Game unlock, then - if a run was started
+    // from the title's third item - the run's own loadout and spawn point. Both
+    // have to follow the bio_card memcpy above (which is what clears the unlock
+    // byte and rebuilds the inventory) and precede LoadHeldItemsImages() below.
+    saturn_battle_preserve();
+    saturn_battle_begin_run();
+
     // Director's Cut zombie dispatch entry (behaviour 11); no-op for DcMode=0.
     dc_apply_zombie_tables();
+
+    // Sega Saturn: zombie behaviour 9 (the Battle Game's Zombie Wesker) chases;
+    // the PC leaves that slot NULL. Written both ways.
+    saturn_apply_zombie_tables();
 
     g_deadMoveValue = (DWORD)&g_identityMatrixData;
     g_RoomCameraDataCopy = (DWORD)&g_RoomCameraData;
@@ -623,7 +635,22 @@ void game_start(void)
 
     end_game_status = game_loop();
 
+    // A Battle Game run is over, whatever ended it. Clear it here, before any
+    // of the exits below, because the arena redirect in load_room_bg and
+    // Room_LoadEnemySoundBanks is keyed on the flag alone: leaving it set would
+    // make the NEXT campaign game load arena 1's background. The Saturn gets
+    // this for free - the flag is a bit in a module that is unloaded with the
+    // run. What the ranking needs is taken first.
+    const int battleRanking = saturn_battle_close_run();
+
     g_main_state_flags = 0;
+
+    // Sega Saturn: a Battle Game run - finished or dead - leaves GAME5 for
+    // RANKING, never for the title or the ending (GAME5 0x0602BD28).
+    if (battleRanking) {
+        g_main_state_flags2 = g_main_state_flags2 & MSF2_RESET_KEEP_MASK;
+        Task_chain((void*)saturn_ranking_state);
+    }
 
     if (end_game_status == 1) {
         g_main_state_flags2 = g_main_state_flags2 & MSF2_RESET_KEEP_MASK;

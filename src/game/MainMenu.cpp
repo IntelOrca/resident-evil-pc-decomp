@@ -11,6 +11,7 @@
 // State machine: DAT_00ae9f11 controls the current submenu (0-8)
 // Menu mode: DAT_00ae9f10 determines initial submenu on open
 // ============================================================================
+#include "saturn/SaturnBattle.h"
 #include "../Globals.h"
 #include "../platform/platform.h"
 #include "../system/AssetPath.h"
@@ -1278,6 +1279,7 @@ static int menu_item_use_heal(unsigned char slot)
             if ((int)g_playerEntity.health < (int)maxHealth) {
                 used = 1;
                 DAT_00ae9f13 = DAT_00ae9f13 | 0x20;
+                if (g_bSaturnMode) saturn_battle_count_heal();   // GAME5 0x060444FA
                 unsigned char amount = bVar1 & 0xf;
                 if (amount == 1) {
                     g_playerEntity.health = g_playerEntity.health + g_playerEntity.maxHealth / 3;

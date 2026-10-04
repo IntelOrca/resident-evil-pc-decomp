@@ -1,6 +1,7 @@
 #pragma once
 // Entry points for the two migrations the GUI drives.
 
+#include "core/AudioWriter.h"
 #include "core/Types.h"
 
 #include <string>
@@ -78,6 +79,40 @@ struct DcMigrationOptions {
     bool fmvSubtitles = true;
 };
 
+struct SaturnMigrationOptions {
+    // The Sega Saturn disc image (the track-1 .bin, or its .cue). Track 1 is
+    // MODE1/2352 ISO9660; the audio tracks are not read.
+    std::string imagePath;
+    // Game folder the SATURN/ overlay is written under.
+    std::string targetRoot;
+    // Convert the Saturn-only creature models (EM1016/EM1116 = the Tick,
+    // EM1017/EM1117 = Zombie Wesker) into PC .EMDs in SATURN/Enemy.
+    bool convertModels = true;
+    // Decode the 15 Battle Game arena rooms (STAGE8/ROOM80x0.RDT, LZ77) into
+    // SATURN/Stage8, with the PS1 colour-key -> PC index-0 relabel.
+    bool arenaRooms = true;
+    // Convert the room backgrounds the Saturn re-drew into SATURN/Stage<n> as
+    // PC paks. Today that is the Laboratory Tyrant room (STAGE5/ROOM513.BSS ->
+    // RC5130..RC5137.pak), whose art the Saturn replaces on all eight cameras
+    // and where Chris' second Tyrant comes out of the second capsule.
+    bool roomBackgrounds = true;
+    // Write the PC/PS1 option typeface as SATURN/Data/TITLEFNT.BIN, which the
+    // port's Saturn title menu draws NEW GAME / LOAD GAME / EXTRA with
+    // (core/TitleFont.h). Carried by the tool, not read from the disc.
+    bool titleFont = true;
+    // Render the Battle Game's own music (SND/BATTLE.CDP, SND/NAME.CDP) from
+    // its sequences into SATURN/Sound (core/SaturnMusic.cpp).
+    bool battleMusic = true;
+    // Render the Tick's exclusive sound effects (SND/SE308.CDP songs 0-7) into
+    // SATURN/Sound as SAT_TICK_*, mono (core/SaturnMusic.cpp).
+    bool tickSfx = true;
+    AudioFormat musicFormat = AudioFormat::Wav;
+    int oggQuality = 6;             // libvorbis -q:a when musicFormat is Ogg
+    std::string ffmpegPath = "ffmpeg";
+    // Re-read everything written and check it.
+    bool verify = true;
+};
+
 // migratePcAssets runs the base-tree copy when sourcePath is set, then the PS1
 // supplement when ps1ImagePath is set; at least one of the two is required.
 // Both return true on success; on failure `error` carries a human-readable
@@ -88,5 +123,9 @@ bool migratePcAssets(const PcMigrationOptions& opts, const Progress& progress,
 
 bool migrateDcAssets(const DcMigrationOptions& opts, const Progress& progress,
                      std::string* error);
+
+// Builds <target>/SATURN from a Saturn disc (core/SaturnOverlay.cpp).
+bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
+                         const Progress& progress, std::string* error);
 
 }  // namespace re1

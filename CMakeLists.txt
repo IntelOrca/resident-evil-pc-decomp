@@ -92,6 +92,7 @@ set(RE1_SOURCES
     src/game/TmdAnimation.cpp
     src/game/TmdRenderer.cpp
     src/game/WeaponDamage.cpp
+    
     src/game/dc/WeaponDamageTables.cpp
     src/game/dc/ItemTables.cpp
     src/game/dc/ItemNames.cpp
@@ -101,6 +102,12 @@ set(RE1_SOURCES
     src/game/dc/EntityModels.cpp
     src/game/dc/ArrangeStages.cpp
     src/game/dc/ArrangeSoundRows.cpp
+
+    src/game/saturn/SaturnBattle.cpp
+    src/game/saturn/SaturnModels.cpp
+    src/game/saturn/SaturnRoomObjects.cpp
+    src/game/saturn/SaturnTitle.cpp
+    src/game/saturn/SaturnTyrant.cpp
 
     src/game/entities/Adder.cpp
     src/game/entities/BlackTiger.cpp

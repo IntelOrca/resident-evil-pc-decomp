@@ -380,7 +380,12 @@ void ConfigFile_EnsureExists(void)
         ";            DC/ folder beside USA/ holding only the files it changes or\n"
         ";            adds; anything it does not carry falls back to the tree\n"
         ";            [Assets] Version selects.\n"
-        ";   SATURN, DS = folder names reserved; no code behind them yet.\n"
+        ";   SATURN = the Sega Saturn release, which adds the Tick, Zombie Wesker\n"
+        ";            and the Battle Game on top of the campaign. Needs a SATURN/\n"
+        ";            folder beside USA/ holding ONLY what the Saturn adds; the\n"
+        ";            rooms, data and everything else it shares with the PC\n"
+        ";            release fall back to the tree [Assets] Version selects.\n"
+        ";   DS     = folder name reserved; no code behind it yet.\n"
         "Mode=%s\n"
         "; 1 = use the PS1 staff-credit overlay in the ending FMVs. DC enables it\n"
         "; automatically; OG leaves it off unless this key is set.\n"
@@ -393,6 +398,12 @@ void ConfigFile_EnsureExists(void)
         "; per-movie mask leaves the endings, the staff rolls and two of the\n"
         "; cutscenes unskippable; set this to 1 to make those skippable too.\n"
         "SkipUnskippableFmv=%d\n"
+        "; 1 = offer the Sega Saturn's BATTLE GAME item on the title screen even\n"
+        "; without having cleared a game. The Saturn unlocks it with any ending\n"
+        "; or a port-2 X+Y+Z+Start code; this is a read-time override for players\n"
+        "; who would rather not do either, and it never writes the unlock into a\n"
+        "; save. Only has an effect with Mode=SATURN.\n"
+        "BattleGame=%d\n"
         "\n"
         "[Debug]\n"
         "; Master switch for the port-added debug features: F1 debug menu, F6\n"
@@ -415,6 +426,7 @@ void ConfigFile_EnsureExists(void)
         g_bPs1EndingCredits ? 1 : 0,
         g_bPs1FmvSubtitles ? 1 : 0,
         g_bSkipUnskippableFmv ? 1 : 0,
+        g_bSaturnBattleGame ? 1 : 0,
 #ifdef _DEBUG
         1,
 #else
@@ -514,6 +526,9 @@ BOOL ConfigFile_Load(void)
     // Port-added: overrides the per-FMV skip mask so the movies the original
     // marks unskippable can be skipped too. Off unless the key is set.
     g_bSkipUnskippableFmv = ReadInt(path, "Game", "SkipUnskippableFmv", 0) != 0;
+    // Saturn Battle Game title item, forced on without an ending. The unlock
+    // itself still lives in the save block; this only overrides the test.
+    g_bSaturnBattleGame = ReadInt(path, "Game", "BattleGame", 0) != 0;
     dbg_printf("[CONFIG] mode=%s overlay=%s ps1_credits=%d\n", GameModeName(g_GameMode),
                GetAssetModeName()[0] ? GetAssetModeName() : "(none)",
                g_bPs1EndingCredits ? 1 : 0);

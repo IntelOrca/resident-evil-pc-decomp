@@ -350,6 +350,33 @@ It is off by default, so the shipped behaviour is the original's masks. The
 original's 100-frame grace period still applies, so a press during the first few
 seconds of a movie is ignored.
 
+### Battle Game (Saturn mode)
+
+Sega Saturn mode carries a second game mode the other releases never had: the
+**Battle Game**, a fixed 15-arena run through `STAGE8` with a preset loadout,
+scored on the ammo you did not spend. It adds a third item to the title menu.
+
+The Saturn unlocks that item with **any ending**, or with a port-2
+**X + Y + Z + Start** code on the press-start screen. The code is not ported
+there is no second controller — so if you would rather not clear a game first,
+force it on:
+
+```ini
+[Game]
+Mode=SATURN
+; 1 = offer the BATTLE GAME item without having cleared a game
+BattleGame=1
+```
+
+It is off by default and only does anything with `Mode=SATURN`. It is a
+read-time override: it never writes the unlock into a save, so a game finished
+with it on still records only what you actually earned. Clearing the game once
+also unlocks it for real, permanently, in that save.
+
+**Status:** the entry into a run is ported — the item, the loadout and the first
+arena's art all work. The arena sequence itself is not finished, so a run ends
+at the first arena. See `docs/SATURN_PORT.md`.
+
 ## Controls
 
 The port keeps the original 1997 input model: every binding is a *function*

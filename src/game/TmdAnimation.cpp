@@ -382,7 +382,12 @@ slotFound:
 
     // FUN_004450e0: parse the TMD into the slot's embedded viewport elements
     // (ECX = objSlot in the original; args: hdr, 0, 1, bankID, texRef)
+    // Port extension: a bank texture taller than one page (Saturn model TIM)
+    // gives its height to the V computation; every original TIM is 256 lines.
+    DWORD texHeight = *(DWORD*)(&g_psxTextureArray[bankID * 0x1b60] + 0x30);
+    PSXObject_SetTexHeight(texHeight > 256 ? (int)texHeight : 0);
     PSXObject_Store((CMarniDirect3DTMD*)objSlot, (int*)hdrPtr, 0, bankID, (int)texRef);
+    PSXObject_SetTexHeight(0);
 
     // Restore header
     hdrPtr[0] = saved0;

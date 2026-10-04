@@ -54,3 +54,8 @@ target_link_libraries(re1am_selftest PRIVATE re1assets_core)
 if(MSVC)
     target_compile_options(re1am_selftest PRIVATE /W3 /utf-8)
 endif()
+
+include(CTest)
+if(BUILD_TESTING)
+    add_test(NAME re1am_core_selftest COMMAND re1am_selftest selftest)
+endif()

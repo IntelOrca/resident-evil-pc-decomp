@@ -29,6 +29,7 @@
 #include "SpriteRenderer.h"
 #include "BioCard.h"
 #include "PrintText.h"
+#include "saturn/SaturnBattle.h"
 #include "../system/AssetPath.h"
 #include <cstdio>
 #include <cstring>
@@ -1124,6 +1125,14 @@ void ending_state(void)
     (void)slot;
 
     Flg_on((int)g_ScenarioFlags, SCENARIO_FLAG_SECOND_PLAYTHROUGH);
+
+    // Sega Saturn: the Battle Game unlocks here, and only here. ENDING.PRG's
+    // main (0x0602DC28) sets save byte 0xBF = 1 on entry, unconditionally, if
+    // a save exists and reads cleanly - any ending counts, and which one is
+    // irrelevant. It must sit before the save write below, which is what carries
+    // the byte to disk; the bio_card reload at the top of this function is what
+    // cleared it, so raising it any earlier would be undone.
+    saturn_battle_unlock();
 
     setSomeColor(128, 128, 128);
     g_SpecialRoomLightState = (short)0xFFFF;

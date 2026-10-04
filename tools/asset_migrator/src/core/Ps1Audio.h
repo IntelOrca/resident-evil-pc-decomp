@@ -10,14 +10,13 @@
 // listed files so a PC copy can restore the originals cleanly. Names the PS1
 // has no counterpart for keep the tree's file.
 
+#include "core/AudioWriter.h"
 #include "core/DiscImage.h"
 #include "core/Types.h"
 
 #include <string>
 
 namespace re1 {
-
-enum class AudioFormat { Wav, Ogg };
 
 struct Ps1AudioOptions {
     bool sfx = true;

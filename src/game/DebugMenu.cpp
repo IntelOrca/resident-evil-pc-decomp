@@ -29,6 +29,16 @@
 // record and stands the player just past that door's action zone, with a
 // collision point query to reject spots that are inside a wall.
 //
+// Battle Game: while a run is in progress the stage list grows a STAGE8 entry
+// whose rooms are the 15 arenas, so the menu moves between arenas mid-run.
+// That jump does NOT go through the synthetic record: the room byte is the
+// arena number, so the destination, the door animation, the door sound and the
+// arrival point are the run's own (saturn_battle_debug_warp, saturn/
+// SaturnBattle.cpp) - an arena's RDT is a copy of a campaign room and its own
+// door records have nothing to do with where a Battle Game arena puts you.
+// Picking a campaign stage instead ends the run, because battle mode reads any
+// room numbered 1..15 as an arena.
+//
 // Menu layout (8x8 font, one 8px cell per character):
 //
 //      - DEBUG MENU -                    - ROOM CHANGE -
@@ -44,6 +54,7 @@
 #include "../marni/MarniSystem.h"
 #include "SpriteRenderer.h"
 #include "FileLoader.h"
+#include "saturn/SaturnBattle.h"
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -125,14 +136,46 @@ struct DebugStageRooms {
     int                count;
 };
 
-// Only the seven base stages are listed. The Director's Cut's arrange stages
-// (ids 7-13, STAGE8-E) are not a destination of their own: they hold the same
-// physical rooms as the base stage seven ids below, and ADVANCED mode already
-// redirects a base stage/room load to its arrange file (room_file_stage, in
-// dc/ArrangeStages.cpp), so picking the base room is how you reach it.
-#define DBG_STAGE_COUNT   7
+// STAGE8 - the Sega Saturn Battle Game's arenas (stage 7, 0-indexed). Listed
+// ONLY while a Battle run is in progress, so it is the one destination the
+// debug menu adds for that mode: the arena list, where UP/DOWN picks the arena.
+// The room byte IS the arena number (arena 1 is ROOM8010 .. arena 15 ROOM80F0),
+// so the table is 16 long and index 0 - ROOM8000, which no arena uses - is the
+// skipped entry DebugRoomSelectable rejects. Each label carries the campaign
+// room the arena's cameras, background and sound banks are a copy of
+// (kArenaCampaignRoom, saturn/SaturnBattle.cpp), in the same hex form the room
+// line above it uses.
+static const char* const s_dbgRoomsSaturnBattle[16] = {
+    "(NOT AN ARENA)",
+    "ARENA 01  ROOM 100",      // rest room
+    "ARENA 02  ROOM 103",
+    "ARENA 03  ROOM 302",
+    "ARENA 04  ROOM 117",
+    "ARENA 05  ROOM 210",
+    "ARENA 06  ROOM 100",      // rest room
+    "ARENA 07  ROOM 404",
+    "ARENA 08  ROOM 40C",
+    "ARENA 09  ROOM 309",
+    "ARENA 10  ROOM 30C",
+    "ARENA 11  ROOM 30E",      // rest room
+    "ARENA 12  ROOM 509",
+    "ARENA 13  ROOM 50F",
+    "ARENA 14  ROOM 510",
+    "ARENA 15  ROOM 513",      // the Tyrant
+};
 
-static const DebugStageRooms s_dbgStageRooms[DBG_STAGE_COUNT] = {
+// Only the seven base campaign stages are listed by default. The Director's
+// Cut's arrange stages (ids 7-13, STAGE8-E) are not a destination of their
+// own: they hold the same physical rooms as the base stage seven ids below, and
+// ADVANCED mode already redirects a base stage/room load to its arrange file
+// (room_file_stage, in dc/ArrangeStages.cpp), so picking the base room is how
+// you reach it. STAGE8 (id 7) is the same id those stages start at, which is
+// why it only appears during a Battle run - and why the arena jump goes
+// through the run's own tables instead of a synthetic door record.
+#define DBG_STAGE_COUNT   7
+#define DBG_STAGE_TOTAL   8       // plus STAGE8, listed only in a Battle run
+
+static const DebugStageRooms s_dbgStageRooms[DBG_STAGE_TOTAL] = {
     { s_dbgRoomsMansion1F, 29 },    // stage 0 - mansion 1F
     { s_dbgRoomsMansion2F, 29 },    // stage 1 - mansion 2F
     { s_dbgRoomsCourtyard, 18 },    // stage 2 - courtyard / underground
@@ -140,12 +183,22 @@ static const DebugStageRooms s_dbgStageRooms[DBG_STAGE_COUNT] = {
     { s_dbgRoomsLaboratory, 22 },   // stage 4 - laboratory
     { s_dbgRoomsMansion1F, 29 },    // stage 5 - mansion return 1F
     { s_dbgRoomsMansion2F, 29 },    // stage 6 - mansion return 2F
+    { s_dbgRoomsSaturnBattle, 16 }, // stage 7 - STAGE8, the Battle arenas
 };
 
-// Highest stage the room-change menu will scroll to.
+// A Battle run in progress - the only state in which the arena list may be
+// used, and the only state in which g_stageId is SATURN_BATTLE_STAGE_ID.
+static int DebugBattleRunActive(void)
+{
+    return g_bSaturnMode && g_saturnBattleActive != 0;
+}
+
+// Highest stage the room-change menu will scroll to. A Battle run adds STAGE8,
+// so the debug menu can move between arenas mid-run; outside one it is the
+// seven base stages, exactly as before.
 static int DebugStageMax(void)
 {
-    return DBG_STAGE_COUNT - 1;
+    return DebugBattleRunActive() ? SATURN_BATTLE_STAGE_ID : DBG_STAGE_COUNT - 1;
 }
 
 // Menu entries, mirroring the PS1 debug menu. "ROOM CHANGE" replaces its
@@ -354,6 +407,13 @@ static int DebugRoomSelectable(int stage, int room)
         }
     }
 
+    // STAGE8 in a Battle run: the room byte is the arena number and the arenas
+    // are rooms 1..15, so ROOM8000 is not one of them and is stepped off like
+    // the mansion's missing RDTs are. (Outside a run this stage is not listed.)
+    if (stage == SATURN_BATTLE_STAGE_ID && room == 0) {
+        return 0;
+    }
+
     return 1;
 }
 
@@ -386,6 +446,32 @@ static void DebugRoomChange_Trigger(void)
         dbg_printf("[debugmenu] room change blocked: stage %d room %02X has no valid RDT\n",
                    stage, s_dbgRoom);
         return;
+    }
+
+    // An arena of a Battle run. This is not a generic room change: the run owns
+    // the destination (the room byte is the arena number), the door animation and
+    // sound come from its virtual door record and the arrival point from its
+    // spawn table, so the jump is handed to the run's own warp
+    // (saturn_battle_debug_warp) instead of the synthetic record below. That
+    // also means the post-load placement hook must stay disarmed: the player is
+    // already where the arena's spawn record puts them.
+    if (DebugBattleRunActive() && stage == SATURN_BATTLE_STAGE_ID) {
+        s_dbgRoomChangeArmed = 0;
+        s_dbgRestoreVariant = 0;
+        dbg_printf("[debugmenu] room change: battle arena %d (ROOM 80%X0)\n",
+                   s_dbgRoom, s_dbgRoom);
+        saturn_battle_debug_warp(s_dbgRoom);
+        return;
+    }
+
+    // Leaving the arenas for a campaign room ends the run first. Battle mode is
+    // keyed on the room byte alone - saturn_battle_arena_index() reads any room
+    // 1..15 as an arena - so a campaign room that happens to be numbered in that
+    // range would be loaded as one of the arenas: the wrong background, the
+    // arena music and a per-frame machine re-arming itself on the way out.
+    if (DebugBattleRunActive()) {
+        dbg_printf("[debugmenu] room change: leaving the battle run for stage %d\n", stage);
+        saturn_battle_end_run();
     }
 
     memset(s_dbgDoorRecord, 0, sizeof(s_dbgDoorRecord));

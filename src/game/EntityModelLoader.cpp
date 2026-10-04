@@ -8,6 +8,8 @@
 #include "../system/AssetPath.h"
 #include "dc/EntityModels.h"
 #include "dc/Items.h"        // DC_ITEM_BERETTA_CUSTOM
+#include "saturn/SaturnModels.h"
+#include "saturn/SaturnBattle.h"
 
 // ============================================================================
 // Extern data declarations (not yet extracted to Globals.h)
@@ -489,6 +491,13 @@ void LoadEntityEMD(Entity* em, unsigned char entity_id)
         entity_id = dc_emd_advanced_index(entity_id);
     }
 
+    // The Saturn's loader (Saturn GAME5 0x0604EA80) swaps the Hunter's model for
+    // the Tick's on stage index 2, before the table is read. The entity keeps
+    // type 6, so this only chooses which mesh is loaded.
+    if (g_bSaturnMode) {
+        entity_id = saturn_emd_model_index(entity_id);
+    }
+
     // The port's table is the OG's; in DC mode a handful of indices name a
     // different file (dc/EntityModels.cpp). NULL = the table entry stands.
     const char* emdPath = g_emdPathTable[(g_playerEntity.id & 1) * 53 + entity_id];
@@ -496,6 +505,16 @@ void LoadEntityEMD(Entity* em, unsigned char entity_id)
         const char* dcPath = dc_emd_path(entity_id, (unsigned char)(g_playerEntity.id & 1));
         if (dcPath != NULL) {
             emdPath = dcPath;
+        }
+    }
+    // Same shape in Saturn mode: the Saturn's table fills two of the PC's em100a
+    // placeholder slots. Both branches are mode-gated and the modes are
+    // exclusive, so the two never both answer for one index.
+    if (g_bSaturnMode) {
+        const char* saturnPath =
+            saturn_emd_path(entity_id, (unsigned char)(g_playerEntity.id & 1));
+        if (saturnPath != NULL) {
+            emdPath = saturnPath;
         }
     }
 
@@ -538,6 +557,11 @@ void LoadEntityEMD(Entity* em, unsigned char entity_id)
         case 18:
             DAT_004d2bd8 = 1;
             break;
+    }
+
+    // Saturn Battle Game: arena 15's models are loaded gold (GAME5 0x0603BD0A).
+    if (g_bSaturnMode && g_saturnBattleActive) {
+        saturn_battle_tint_model_tim((unsigned char*)g_loadDataDestPointer);
     }
 
     ProcessTmdAsync((unsigned int)g_loadDataDestPointer);

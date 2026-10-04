@@ -9,6 +9,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>          // memcpy, for the DC title sheet assembly
+#include "saturn/SaturnBattle.h"
+#include "saturn/SaturnTitle.h"
 #include "../system/AssetPath.h"
 
 extern void logos_state(void);
@@ -181,6 +183,43 @@ static unsigned int dc_title_build_page(const unsigned char* file,
     return (unsigned int)(p - out);
 }
 
+// The Saturn's third menu item, "BATTLE GAME", as a second page in the same
+// slot-13 position the Director's Cut's submenu uses. The USA sheet is full (its
+// third row ends at 245 of 256), so this cannot be another row of it. It is
+// built from the port's own 8x14 font rather than from the Saturn's own menu
+// art - see saturn_title_build_text_page() for why, and for what changes when
+// that art is imported.
+//
+// Idempotent, and called once from init_title_screen(). The item is reachable
+// from there because the unlock is settled before the title screen is drawn:
+// it comes from the save block (the ending raised it) or from [Game]
+// BattleGame=1, and both are known by then.
+//
+// If the page cannot be built the item must stay unreachable, so the return
+// value is the only thing that lets the cursor onto row 3 - see
+// title_menu_last_item(), which is what both the wrap and the default consult.
+static int s_battlePageReady = 0;
+
+// Saturn mode, with data\titlefnt.bin present: the second title state is drawn in
+// the original typeface as NEW GAME / LOAD GAME / EXTRA, and EXTRA opens a
+// submenu (g_titleOptionsFading 11). Set in init_title_screen(); when it is 0
+// the previous behaviour above applies unchanged. See saturn/SaturnTitle.h.
+static int s_saturnFontMenu = 0;
+
+static int build_battle_game_page(void)
+{
+    if (s_battlePageReady) return 1;
+    LoadFile(GAME_DATA_ROOT "data\\fontus.tim", g_bgPakLoadBuffer, 0x20);
+    if (saturn_title_build_text_page(g_bgPakLoadBuffer, "BATTLE GAME", 84, 25,
+                                     g_TimImageBuffer__bitmap) == 0) {
+        return 0;
+    }
+    LoadTexturePage(g_TimImageBuffer__bitmap, 9, 0, 13, 0, 0, 0, 0);
+    g_titleTexturePageData[SATURN_TITLE_BATTLE_ITEM] = 9;
+    s_battlePageReady = 1;
+    return 1;
+}
+
 // ============================================================================
 void init_title_screen(void)
 {
@@ -211,6 +250,13 @@ void init_title_screen(void)
             ? GAME_DATA_ROOT "data\\t_press.tim"
             : GAME_DATA_ROOT "data\\t_start.tim";
         LoadFile(buttonTexPath, g_TimImageBuffer__bitmap, 0x20);
+
+        s_saturnFontMenu = 0;
+        if (g_bSaturnMode && saturn_title_font_load()) {
+            saturn_title_draw_main_frames(g_TimImageBuffer__bitmap,
+                                          saturn_battle_is_unlocked());
+            s_saturnFontMenu = 1;
+        }
     }
 
     g_titleTexturePageData[4] = 26;
@@ -236,6 +282,20 @@ void init_title_screen(void)
         g_titleTexturePageData[4] = 9;
         g_titleTexturePageData[5] = 9;
         g_titleTexturePageData[6] = 9;
+    } else if (s_saturnFontMenu) {
+        // Selection 3 (EXTRA) is a frame of the main sheet; the submenu's entries
+        // are the frames of a second sheet in slot 13, as the DC's are.
+        if (saturn_title_build_extras_page(g_TimImageBuffer__bitmap) != 0) {
+            LoadTexturePage(g_TimImageBuffer__bitmap, 9, 0, 13, 0, 0, 0, 0);
+        } else {
+            s_saturnFontMenu = 0;
+        }
+        g_titleTexturePageData[SATURN_TITLE_EXTRA_ITEM] = 8;
+        for (int i = 0; i < saturn_title_extras_count(); i++) {
+            g_titleTexturePageData[SATURN_TITLE_EXTRAS_FIRST + i] = 9;
+        }
+    } else if (g_bSaturnMode && saturn_battle_is_unlocked()) {
+        build_battle_game_page();
     }
 
     {
@@ -250,7 +310,11 @@ void init_title_screen(void)
         g_main_state_flags &= ~MSF_SCREEN_MODE_MASK;
         return;
     }
-    g_titleSelectionId = 1;
+    // The Saturn's default cursor is its extra item when there is no save
+    // (TITLE.PRG TitleStateMachine 0x0602D508, `0x30` against the USA build's
+    // `0x20`): with nothing to continue, BATTLE GAME is the first thing offered.
+    g_titleSelectionId = (unsigned char)((g_bSaturnMode && saturn_battle_is_unlocked())
+                                         ? SATURN_TITLE_BATTLE_ITEM : 1);
     g_main_state_flags &= ~MSF_SCREEN_MODE_MASK;
 }
 
@@ -307,11 +371,47 @@ struct TitleTextPosData {
 // USA sheet (data\t_press.tim / data\t_start.tim, 256x256): the PC build
 // re-cropped the three frames out of the PS1's 80-row cells, hence the per-row
 // screenY and the shorter heights.
-static const TitleTextPosData g_titleTextPosTableUsa[3] = {
+//
+// Row 3 is the Sega Saturn's BATTLE GAME item and draws from a SECOND page
+// (slot 13), built in init_title_screen by saturn_title_build_text_page() - the
+// Saturn's own menu art is not imported yet. It is never reached outside Saturn
+// mode, because the cursor cannot land on 3 there and the clamp below is 2.
+static const TitleTextPosData g_titleTextPosTableUsa[4] = {
     { 0,  54, 24, 12 },  // index 0: "PRESS ANY BUTTON" / "PRESS START BUTTON"
     { 83, 70,  8, 12 },  // index 1: "NEW GAME"
     { 175,70,  8, 12 },  // index 2: "LOAD GAME"
+    { 0,  64,  8, 13 },  // index 3: "BATTLE GAME" (Saturn mode only)
 };
+
+// Saturn font menu (saturn/SaturnTitle.cpp). Every frame is 64 rows of one of
+// two sheets: the main one (slot 12) keeps PRESS START BUTTON's original rows and
+// carries the three menu frames below them, the second (slot 13) one frame per
+// EXTRA entry. The frames' first text line sits one row down, so the same
+// screenY the USA rows use (8) puts the lines where the original art has them.
+static const TitleTextPosData g_titleTextPosTableSat[8] = {
+    {   0, 54, 24, 12 },  // 0: PRESS START BUTTON (the USA art, untouched)
+    {  64, 64,  8, 12 },  // 1: NEW GAME bright
+    { 128, 64,  8, 12 },  // 2: LOAD GAME bright
+    { 192, 64,  8, 12 },  // 3: EXTRA bright
+    {   0, 64,  8, 13 },  // 4: EXTRA submenu entry 0 (BATTLE GAME) bright
+    {  64, 64,  8, 13 },  // 5: entry 1
+    { 128, 64,  8, 13 },  // 6: entry 2
+    { 192, 64,  8, 13 },  // 7: entry 3
+};
+
+// The last selectable row, i.e. what the cursor wraps to. The Saturn's title
+// wraps at 0x40 with the Battle item present and 0x30 without (TITLE.PRG
+// TitleStateMachine 0x0602D508 / TitleMenuCursorDraw 0x0602BDCC).
+//
+// Row 3 is only offered once its page actually exists: the unlock alone is not
+// enough, because drawing row 3 with no page behind it would ask
+// display_texture for whatever g_titleTexturePageData[3] happens to hold.
+static int title_menu_last_item(void)
+{
+    return (g_bSaturnMode && saturn_battle_is_unlocked() &&
+            (s_battlePageReady || s_saturnFontMenu))
+               ? SATURN_TITLE_BATTLE_ITEM : 2;
+}
 
 // Director's Cut (data\t_dc.tim + data\t_dc2.tim, built by
 // tools/port_dc_assets.py). The PS1 draws every option as a whole 256x80 cell at
@@ -346,8 +446,18 @@ void UpdateTitleTextSprite(unsigned char brightness, unsigned char selectionId)
     if (g_bDcMode) {
         if (selectionId > 6) selectionId = 0;
         entry = &g_titleTextPosTableDc[selectionId];
+    } else if (s_saturnFontMenu) {
+        // 4.. are the submenu's frames, which the cursor-row clamp must not fold
+        // back to 0.
+        if (selectionId >= SATURN_TITLE_EXTRAS_FIRST) {
+            if (selectionId - SATURN_TITLE_EXTRAS_FIRST >= saturn_title_extras_count()) selectionId = 0;
+        } else if (selectionId > SATURN_TITLE_EXTRA_ITEM) {
+            selectionId = 0;
+        }
+        entry = &g_titleTextPosTableSat[selectionId];
     } else {
-        if (selectionId > 2) selectionId = 0;
+        const int last = (unsigned char)title_menu_last_item();
+        if (selectionId > (unsigned char)last) selectionId = 0;
         entry = &g_titleTextPosTableUsa[selectionId];
     }
 
@@ -451,6 +561,53 @@ void update_title_options(void)
             }
             return;
 
+        case 11: {
+            // Saturn EXTRA submenu: the extra game modes, then BACK. Up/down
+            // move; confirm starts the highlighted mode, or returns to the main
+            // menu on BACK (leaving the cursor on EXTRA).
+            const int entries = saturn_title_extras_count();
+            const int backSel = SATURN_TITLE_EXTRAS_FIRST + entries - 1;
+            if (g_PlayerPadPressed & 0x5100) {
+                if (!(g_PlayerPadPressed & 0x1100)) {
+                    if (g_titleSelectionId >= backSel) g_titleSelectionId = SATURN_TITLE_EXTRAS_FIRST - 1;
+                    g_titleSelectionId++;
+                } else {
+                    if (g_titleSelectionId <= SATURN_TITLE_EXTRAS_FIRST) g_titleSelectionId = backSel + 1;
+                    g_titleSelectionId--;
+                }
+                g_titleDemoTime = 0x708;
+            }
+
+            if ((g_PlayerPadPressed & 0xeff) || sidewinderPress) {
+                if (g_titleSelectionId == backSel) {
+                    g_titleOptionsFading = 2;
+                    g_titleSelectionId = SATURN_TITLE_EXTRA_ITEM;
+                    g_titleDemoTime = 0x708;
+                    UpdateTitleTextSprite(128, g_titleSelectionId);
+                    return;
+                }
+                play_sfx(SFX_BANKS, SFX_TITLE_EVIL01);
+                play_sfx(SFX_BANKS, 1); // null sfx
+                g_titleOptionsFading = 6;
+                g_fade_type_id = 1;
+                g_fading_counter = 0x7F00;
+                fade_update();
+                g_bGameActive = 2;
+                return;
+            }
+
+            UpdateTitleTextSprite(128, g_titleSelectionId);
+
+            g_titleDemoTime--;
+            if (g_titleDemoTime == 0) {
+                g_titleOptionsFading = 3;
+                g_fade_type_id = 2;
+                g_fading_counter = 0x400;
+                fade_update();
+            }
+            return;
+        }
+
         case 0:
             g_titleOptionsFading = 1;
             g_fade_type_id = 2;
@@ -483,6 +640,16 @@ void update_title_options(void)
 			return;
 		}
 
+		// Saturn: EXTRA is a container, not a game. It opens the submenu and is
+		// silent, like the DC's NEW GAME.
+		if (s_saturnFontMenu && ((g_PlayerPadPressed & 0xeff) || sidewinderPress) &&
+		    g_titleSelectionId == SATURN_TITLE_EXTRA_ITEM) {
+			g_titleOptionsFading = 11;
+			g_titleSelectionId = SATURN_TITLE_EXTRAS_FIRST;
+			g_titleDemoTime = 0x708;
+			return;
+		}
+
 		if ((g_PlayerPadPressed & 0xeff) || sidewinderPress) {
 			play_sfx(SFX_BANKS, SFX_TITLE_EVIL01);
 			play_sfx(SFX_BANKS, 1); // null sfx
@@ -495,13 +662,17 @@ void update_title_options(void)
 		}
 
 		if (g_PlayerPadPressed & 0x5100) {
+			// The wrap target is the last SELECTABLE row, so it is 2 everywhere
+			// but Saturn mode with the Battle item unlocked - the same 0x30/0x40
+			// distinction the Saturn's own menu draws.
+			const unsigned char lastItem = (unsigned char)title_menu_last_item();
 			if (!(g_PlayerPadPressed & 0x1100)) {
-				if (g_titleSelectionId == 2) g_titleSelectionId = 0;
+				if (g_titleSelectionId == lastItem) g_titleSelectionId = 0;
 				g_titleSelectionId++;
 			} else {
 				g_titleSelectionId--;
 				if (g_titleSelectionId == 0) {
-					g_titleSelectionId = 2;
+					g_titleSelectionId = lastItem;
 					g_titleDemoTime = 0x708;
 					goto demo_reset;
 				}
@@ -765,15 +936,33 @@ void title_state(void)
             return;
         }
 
+    case SATURN_TITLE_BATTLE_ITEM:          // the old third row (no title font)
+    case SATURN_TITLE_EXTRAS_FIRST:         // EXTRA > BATTLE GAME
+        // The Saturn's Battle Game: TITLE (mode 2) -> BU_LOAD -> GAME5. The
+        // load screen is not optional - the save picked there is what the run
+        // starts from - so this is the LOAD GAME path below with battle mode
+        // armed, owned by saturn_battle_load_state, which the ranking's
+        // "continue? YES" chains as well. Arming battle mode and chaining
+        // game_start directly, as this did at first, took the NEW GAME path
+        // instead: the card was reset from data\bio_card.dat, the character was
+        // lost, and the opening narration was the new game's rather than the
+        // run's.
+        //
+        // The confirm is reached the same way as every other item
+        // (g_titleOptionsFading 6, the fade, then this switch); the Saturn
+        // likewise only branches on the item index after the shared fade.
+        Task_chain((void*)saturn_battle_load_state);
+        return;
+
     case 2:
-    case 3:
         g_main_state_flags = (g_main_state_flags & ~MSF_SCREEN_MODE_MASK) | MSF_SCREEN_STANDALONE;
         LoadSaveGameState(1, 0x80180000, 0, 1, 0);
         g_loadSaveStateFlag = 0;
         Game_timer = g_gameTimerSnapshot;
         g_main_state_flags = (g_main_state_flags & ~MSF_SCREEN_MODE_MASK) | MSF_SCREEN_STANDALONE;
-        nullsub_0047eb80();
+        // nullsub_0047eb80(); // ps1/dev leftover
         Task_chain((void*)game_start);
+        return;   // the old fall-through only reached `default: return;`
 
     default:
         return;

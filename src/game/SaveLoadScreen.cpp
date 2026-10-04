@@ -13,6 +13,7 @@
 #include "SFXIds.h"
 #include "PrintText.h"
 #include "dc/Items.h"    // lockpick item id (is_lockpick_item)
+#include "saturn/SaturnBattle.h"
 #include <cstdio>
 #include <cstring>
 #include "../system/AssetPath.h"
@@ -732,6 +733,13 @@ static void RestoreSaveBlock(const char* fileBuffer, int fileSize)
     memcpy(liveJoyRemap, g_JoyRemapTbl[1], sizeof(liveJoyRemap));
 
     memcpy(g_BioCardData, fileBuffer, sizeof(BioCardLayout));
+
+    // Sega Saturn: a save carries the Battle Game unlock in the card, so the
+    // title screen's third item follows the slot that was loaded. No-op in the
+    // other two modes. The Saturn reads its single save file at the press-start
+    // screen; the PC has eight slots, so the item reflects the one just loaded.
+    saturn_battle_sync_from_card();
+    
     memcpy(g_padRemapSubTable3, fileBuffer + OFFSET_PAD_REMAP,
            sizeof(g_padRemapSubTable3));
     g_controllerConfig = fileBuffer[OFFSET_CONTROLLER_CFG];

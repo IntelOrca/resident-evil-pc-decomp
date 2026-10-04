@@ -21,6 +21,9 @@
 #include <cstdarg>
 #include "../DebugPrint.h"
 #include "../system/AssetPath.h"
+#include "saturn/SaturnRoomObjects.h"
+#include "saturn/SaturnBattle.h"
+#include "saturn/SaturnTyrant.h"
 
 // Forward declarations for functions only used within game_loop
 extern void FUN_00473f10(int* baseAddr, unsigned int bitIndex);
@@ -302,6 +305,11 @@ LAB_00480e89:
                     g_PlayerDpadPressed &= 0xC000;
                 }
 
+                // Sega Saturn additions (capsule collision, Battle Game run).
+                if (g_bSaturnMode && saturn_game_loop_update()) {
+                    return 1;
+                }
+
                 // 0x00480ebd-0x00480ecf: Player animation and position update
                 update_player_anim();
                 g_main_state_flags2 &= ~MSF2_EFFECT_ZONE;
@@ -315,10 +323,12 @@ LAB_00480e89:
                 // g_debugMenuOpen stays 0 while debug features are disabled.
                 if (g_debugMenuOpen == 0) {
                     DrawFadeSpr();
+                    if (g_bSaturnMode) saturn_room_objects_update();
+
                     update_room_objects();
 
                     // 0x00480ed4: Draw the room's own 3D objects (omodels + item models)
-                    if (g_dwRoomObjectRenderEnabled != 0) {
+                    if (g_dwRoomObjectRenderEnabled != 0 && !(g_bSaturnMode && saturn_room_objects_hidden())) {
                         render_room_objects();
                     }
 
@@ -373,6 +383,12 @@ LAB_00480e89:
                 }
             }
             else {
+                // Battle mode has no self-destruct timer. Rejoin the normal
+                // gameplay path so the run clock is drawn alongside the room,
+                // rather than falling through to the explosion countdown.
+                if (g_bSaturnMode && g_saturnBattleActive) {
+                    goto LAB_00480d7c;
+                }
                 // ----- Countdown timer active (self-destruct sequence) -----
                 if (g_CountdownTimer != 180) {
                     // 0x00480cb4-0x00480d7c: Display countdown timer.

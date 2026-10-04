@@ -1,0 +1,37 @@
+#pragma once
+// Sega Saturn .EMD -> PC .EMD converter. A C++ port of tools/saturn_emd.py
+// (`pc` command), whose output was play-tested in the PC port (the Tick and
+// Zombie Wesker, 2026-09-28). Layout: docs/SATURN_VERSION_ANALYSIS.md section 5.
+//
+// A Saturn .EMD is a 16-byte big-endian index (tag 0x10 + section offsets
+// S1/S2/S3), the complete PS1 .EMD, then three Saturn sections: LZ77 SGL mesh,
+// LZ77 4 bpp per-polygon textures, raw 16-colour palettes. The output keeps the
+// PS1 part's animation data and replaces its mesh and texture with the Saturn
+// ones: 0x34000609 triangles and one 8 bpp TIM of 256 x (up to 256 * pages)
+// lines. Each packet carries its 256-line page in the pad halfword after
+// (u2, v2); the game reads it through PSXObject_SetTexHeight when the bound
+// TIM is taller than one page.
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace re1 {
+
+struct SaturnEmdInfo {
+    int parts = 0;
+    int palettes = 0;
+    int textures = 0;
+    int pages = 0;
+    int timHeight = 0;
+};
+
+// True when `data` starts with the Saturn .EMD index tag (00 00 00 10).
+bool isSaturnEmd(const std::vector<uint8_t>& data);
+
+// Convert a Saturn .EMD into a PC-format .EMD.
+bool convertSaturnEmd(const std::vector<uint8_t>& saturn,
+                      std::vector<uint8_t>* pcEmd, SaturnEmdInfo* info,
+                      std::string* error);
+
+}  // namespace re1

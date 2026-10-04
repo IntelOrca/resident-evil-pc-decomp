@@ -110,6 +110,27 @@ static const char* const kBaseFallbackPrefixes[] = {
 static const int kBaseFallbackCount =
     (int)(sizeof(kBaseFallbackPrefixes) / sizeof(kBaseFallbackPrefixes[0]));
 
+// Modes whose overlay is sparse BY DESIGN rather than by accident.
+//
+// Every non-OG mode here is a re-release of the same campaign, so an overlay
+// only has to carry what that release actually changes or adds. For the DC that
+// is most of the tree, which is exactly why the miss list above is a useful
+// "your DC/ tree is incomplete" signal. The Saturn is the opposite case: its 348
+// shared rooms decode byte-identical to the PC release's, and its entire
+// exclusive content is four enemy models plus fifteen Battle Game arenas
+// (docs/SATURN_VERSION_ANALYSIS.md 1, docs/SATURN_PORT.md 0). Every campaign room,
+// data table, player model and sound is shared, so stage1..7, data, players and
+// item_m2 all MISSING is correct.
+//
+// Without this, a perfectly healthy SATURN/ folder printed a dozen "SATURN has no
+// stage3/ROOM30A0.RDT - falling back to the base tree" lines a session, which
+// reads as a broken overlay and is not one. Only that warning is suppressed: the
+// per-folder "-> overlay" / "-> BASE TREE" line below still fires, so what the
+// overlay did supply stays visible.
+static const char* const kSparseOverlayModes[] = { "SATURN" };
+static const int kSparseOverlayCount =
+    (int)(sizeof(kSparseOverlayModes) / sizeof(kSparseOverlayModes[0]));
+
 // One line the FIRST time each top-level folder resolves, saying which tree it
 // came from. The miss log below only fires for a folder the mode is supposed to
 // own, and says nothing at all when the overlay is working - so "is my overlay
@@ -142,6 +163,11 @@ static void LogOverlayDecision(const char* tail, int hit)
 
 static int FallbackIsExpected(const char* tail)
 {
+    for (int i = 0; i < kSparseOverlayCount; i++) {
+        if (strcmp(s_modeName, kSparseOverlayModes[i]) == 0) {
+            return 1;
+        }
+    }
     for (int i = 0; i < kBaseFallbackCount; i++) {
         const char* a = tail;
         const char* b = kBaseFallbackPrefixes[i];
@@ -368,6 +394,19 @@ const char* ResolveAssetRoot(const char* path, char* out, size_t outSize)
             char probeBuf[260];
             const char* probe = plat_normalize_path(candidate, probeBuf, sizeof(probeBuf));
             FILE* fp = fopen(probe, "rb");
+            // A sound is asked for as ".wav" and AudioFile_Find takes the ".ogg"
+            // beside it (system/AudioFile.h). An overlay that holds only the .ogg
+            // (the Saturn's music, migrated as Ogg) must still win here, or the
+            // lookup falls through to the base tree, which has neither file.
+            if (fp == NULL && c >= 4 && candidate[c - 4] == '.' &&
+                (candidate[c - 3] | 0x20) == 'w' && (candidate[c - 2] | 0x20) == 'a' &&
+                (candidate[c - 1] | 0x20) == 'v') {
+                char ogg[260];
+                memcpy(ogg, candidate, (size_t)c - 3);
+                memcpy(ogg + c - 3, "ogg", 4);
+                char oggBuf[260];
+                fp = fopen(plat_normalize_path(ogg, oggBuf, sizeof(oggBuf)), "rb");
+            }
             if (fp != NULL) {
                 fclose(fp);
                 int m = sprintf_s(out, outSize, "%s%s", s_overlayRoot, tail);

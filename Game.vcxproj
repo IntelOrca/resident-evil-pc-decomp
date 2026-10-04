@@ -187,6 +187,11 @@
     <ClCompile Include="src\game\dc\EntityModels.cpp" />
     <ClCompile Include="src\game\dc\ArrangeStages.cpp" />
     <ClCompile Include="src\game\dc\ArrangeSoundRows.cpp" />
+    <ClCompile Include="src\game\saturn\SaturnBattle.cpp" />
+    <ClCompile Include="src\game\saturn\SaturnModels.cpp" />
+    <ClCompile Include="src\game\saturn\SaturnRoomObjects.cpp" />
+    <ClCompile Include="src\game\saturn\SaturnTitle.cpp" />
+    <ClCompile Include="src\game\saturn\SaturnTyrant.cpp" />
     <ClCompile Include="src\game\Rendering.cpp" />
     <ClCompile Include="src\game\JpnTextTables.cpp" />
     <ClCompile Include="src\game\PrintText.cpp" />

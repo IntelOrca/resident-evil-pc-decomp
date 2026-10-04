@@ -1883,6 +1883,16 @@ static void PSXObjReadNormal(PSXObjVtx* v, int normBase, unsigned int idx)
 //   objIndex    - object index (original passes 0)
 //   bankOrTpage - selected texture page (-1 = auto-detect); original passes the depth
 //   texRef      - UV divisor (texture page width, from texBank + 0x2C)
+// Port extension, not in the original: the bound texture's height when it is
+// taller than one 256-line page (Saturn-converted models). 0 = the original
+// behaviour, V / 256. Set around one Store call by CreateTmdObjectInternal.
+static int s_psxObjTexHeight = 0;
+
+void PSXObject_SetTexHeight(int height)
+{
+    s_psxObjTexHeight = height;
+}
+
 int PSXObject_Store(CMarniDirect3DTMD* self, int* tmdHdr, int objIndex,
                     int bankOrTpage, int texRef)
 {
@@ -2148,6 +2158,16 @@ int PSXObject_Store(CMarniDirect3DTMD* self, int* tmdHdr, int objIndex,
                         v1.v = (float)*(BYTE*)((BYTE*)pkt + 9) * 0.00390625f;
                         v2.u = (float)(pkt[3] & 0xFF) / texW + ubase;
                         v2.v = (float)*(BYTE*)((BYTE*)pkt + 0xD) * 0.00390625f;
+                        if (s_psxObjTexHeight > 256) {
+                            // Port extension (Saturn models, tools/saturn_emd.py):
+                            // a TIM taller than one page. The packet's pad
+                            // halfword after (u2, v2) carries the 256-line page.
+                            float pageV = (float)(pkt[3] >> 16) * 256.0f;
+                            float texH  = (float)s_psxObjTexHeight;
+                            v0.v = ((float)*(BYTE*)((BYTE*)pkt + 5)   + pageV) / texH;
+                            v1.v = ((float)*(BYTE*)((BYTE*)pkt + 9)   + pageV) / texH;
+                            v2.v = ((float)*(BYTE*)((BYTE*)pkt + 0xD) + pageV) / texH;
+                        }
                         if (v0.u == v1.u || v2.u == v1.u || v0.u == v2.u) v1.u += 0.0001f;
                         if (v0.v == v1.v || v2.v == v1.v || v0.v == v2.v) v1.v += 0.0001f;
                         v0.r = v0.g = v0.b = 1.0f;

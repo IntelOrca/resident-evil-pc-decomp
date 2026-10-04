@@ -1497,7 +1497,11 @@ static constexpr auto s_gm60 = STR("You can't use it here.");
 static constexpr auto s_gm61 = STR("You can't use it here.");
 // [62] 0x004BFC27 - Don't need to use at the moment
 static constexpr auto s_gm62 = STR("You don't need to use this\\nitem at the moment.");
-// [63] - NULL (pointer 0x73755C2E is out of bounds)
+// [63] - NULL in the original (pointer 0x73755C2E is out of bounds). Port-only:
+// the Sega Saturn Battle Game's opening message (GAME5 0x0609E979, in the Saturn's
+// global message table).
+static constexpr auto s_gm63 = STR(
+    "You must defeat\\nall the enemies\\pTand enter into the\\nmysterious zone.\\dT");
 
 unsigned char* global_messages[64] = {
     (unsigned char*)s_gm00.bytes,  // [0]  Will you take the [L1]
@@ -1563,7 +1567,7 @@ unsigned char* global_messages[64] = {
     (unsigned char*)s_gm60.bytes,  // [60] Can't use it here.
     (unsigned char*)s_gm61.bytes,  // [61] Can't use it here.
     (unsigned char*)s_gm62.bytes,  // [62] Don't need to use at the moment.
-    NULL,                            // [63] (out of bounds pointer)
+    (unsigned char*)s_gm63.bytes,  // [63] Saturn Battle Game opening (port-only)
 };
 
 // ============================================================================
@@ -1760,8 +1764,9 @@ DWORD  g_animObjectBuffer[0x680] = {};
 // 0x00c14dc0 - ESP effect data
 BYTE   g_shootDirEspBuffer[73728] = {};
 
-// 0x00c26dc0 - General purpose data buffer (832728 bytes)
-BYTE    g_DataBuffer[832728];
+// 0x00c26dc0 - General purpose data buffer (832728 bytes in the original;
+// the port's headroom is explained in Globals.h)
+BYTE    g_DataBuffer[DATA_BUFFER_ORIGINAL_SIZE + DATA_BUFFER_PORT_HEADROOM];
 
 // Display image buffer for TIM slide loading (at 0x00cf22ac in original)
 BYTE    g_TimImageBuffer[187160+20] = {};
@@ -2000,6 +2005,7 @@ int            g_DcDifficulty = DC_DIFFICULTY_STANDARD;
 bool           g_bPs1EndingCredits = false;
 bool           g_bPs1FmvSubtitles = false;
 bool           g_bSkipUnskippableFmv = false;
+bool           g_bSaturnBattleGame = false;
 
 // ---------------------------------------------------------------------------
 // re1_rand / re1_srand (port-only)

@@ -7,6 +7,7 @@
 #include "../system/AssetPath.h"
 #include "../DebugPrint.h"
 #include "dc/ArrangeStages.h"   // room_file_stage()
+#include "saturn/SaturnBattle.h"
 
 extern void SetSpriteBufferFlag(void);
 
@@ -727,7 +728,24 @@ void load_room_masks(int param_1) // 0x00475a90
     // the page upload (LoadEffectTextureSheet) and the UV normalisation take
     // the height from the TIM header, so a short page samples correctly; do
     // not reintroduce a 256x256 assumption anywhere on this path.
-    if (*spriteGroupPtr != 0 && room_file_stage() >= STAGE_ARRANGE_FIRST) {
+    //
+    // SATURN MODE takes the same path for every room, and not because the
+    // arrange rooms are a special case: the Saturn disc has no objspr/ at all.
+    // Its masks are in the room file - the background is ROOMxyy.BSS and the
+    // mask is the block at the camera's tim_mask_pointer inside ROOMxyy.RDT -
+    // which is why the Saturn's STAGE5 has no OSP*.PAK while the PC's
+    // objspr/ does. Where a base room's pak and its own embedded mask disagree,
+    // they disagree in colour, and the embedded one is the Saturn's: the
+    // Laboratory Tyrant room (stage 4 room 0x13) camera 0 is 1,841 bytes
+    // different, and the room's copy draws the tank vats in grey where the pak
+    // draws them pale green - the "the vats are broken on the Saturn" note in
+    // SATURN_VERSION_ANALYSIS.md 4h. So the pak stays the OG/DC path (it is the
+    // shipped, tested one) and Saturn mode reads the room's own mask.
+    const bool maskIsInRdt =
+        (*spriteGroupPtr != 0) &&
+        (room_file_stage() >= STAGE_ARRANGE_FIRST ||
+         (g_bSaturnMode && cameras[param_1].tim_mask_pointer != 0));
+    if (maskIsInRdt) {
         void* timMask = (void*)cameras[param_1].tim_mask_pointer;
         if (timMask != NULL) {
             TexturePage_SetupFull(timMask, g_TextureBankID, g_TextureCurrentPage,
@@ -786,11 +804,27 @@ void load_room_bg(void) // 0x00462b00
             do {
                 // The stage the FILES come from: g_stageId, or its arrange
                 // twin when ADVANCED has one for this room (dc/ArrangeStages).
-                const unsigned char fileStage = room_file_stage();
+                unsigned char fileStage = room_file_stage();
+
+                // Sega Saturn, Battle Game: an arena's own room file is
+                // SATURN/Stage8/ROOM80xy.RDT, but its BACKGROUND belongs to the
+                // campaign room its cameras were copied from - the Saturn swaps
+                // the arena for that room in LoadRoomBss (GAME1 0x0603E7FC) and
+                // SetupRoomLighting (0x0603E32C) under battle-mode bit 31, which
+                // is what g_saturnBattleActive stands for. The room's own mask
+                // still comes from its RDT (load_room_masks takes the Saturn
+                // path for every room), so only the three path digits below
+                // change. The PC has no Stage8 backgrounds, so without this the
+                // arena would load nothing.
+                unsigned char bgRoomId = g_roomId;
+                if (!saturn_battle_asset_room(&fileStage, &bgRoomId)) {
+                    fileStage = room_file_stage();
+                }
+
                 DAT_004c2090 = g_hexCharTable[cameraIdx];
                 g_bgPathTemplate[GAME_DATA_PATH_IDX(0x0f)] = g_hexCharTable[fileStage + 1];
-                g_bgPathTemplate[GAME_DATA_PATH_IDX(0x10)] = g_hexCharTable[g_roomId >> 4];
-                g_bgPathTemplate[GAME_DATA_PATH_IDX(0x11)] = g_hexCharTable[g_roomId & 0xf];
+                g_bgPathTemplate[GAME_DATA_PATH_IDX(0x10)] = g_hexCharTable[bgRoomId >> 4];
+                g_bgPathTemplate[GAME_DATA_PATH_IDX(0x11)] = g_hexCharTable[bgRoomId & 0xf];
                 // The revisit fold, which applies INSIDE the arrange block too:
                 // STAGED/STAGEE ship no backgrounds of their own and reuse
                 // STAGE8/STAGE9's, exactly as base stages 6/7 reuse stage 1/2's.
@@ -844,11 +878,21 @@ void load_room_bg(void) // 0x00462b00
         int camCounter = 0;
         if (g_RdtPointer->cameras_count != 0) {
             do {
-                const unsigned char fileStage = room_file_stage();
+                unsigned char fileStage = room_file_stage();
+
+                // Saturn Battle Game: the arena's background is the campaign
+                // room's, same redirect and same reason as the mode-0 branch
+                // above. No arena maps to campaign stage 5 or 6, so the revisit
+                // fold below cannot fire on a redirected path.
+                unsigned char bgRoomId = g_roomId;
+                if (!saturn_battle_asset_room(&fileStage, &bgRoomId)) {
+                    fileStage = room_file_stage();
+                }
+
                 g_bgPathTemplate[GAME_DATA_PATH_IDX(0x12)] = g_hexCharTable[camCounter];
                 g_bgPathTemplate[GAME_DATA_PATH_IDX(0x0f)] = g_hexCharTable[fileStage + 1];
-                g_bgPathTemplate[GAME_DATA_PATH_IDX(0x10)] = g_hexCharTable[g_roomId >> 4];
-                g_bgPathTemplate[GAME_DATA_PATH_IDX(0x11)] = g_hexCharTable[g_roomId & 0xf];
+                g_bgPathTemplate[GAME_DATA_PATH_IDX(0x10)] = g_hexCharTable[bgRoomId >> 4];
+                g_bgPathTemplate[GAME_DATA_PATH_IDX(0x11)] = g_hexCharTable[bgRoomId & 0xf];
                 // The revisit fold, which applies INSIDE the arrange block too:
                 // STAGED/STAGEE ship no backgrounds of their own and reuse
                 // STAGE8/STAGE9's, exactly as base stages 6/7 reuse stage 1/2's.

@@ -29,6 +29,7 @@
 #include "TmdRenderer.h"
 #include "SpriteRenderer.h"
 #include "../Globals.h"
+#include "saturn/SaturnRoomObjects.h"   // saturn_omodel_has_no_model
 #include "../marni/MarniDX.h"
 #include "../marni/MarniSystem.h"
 #include "../marni/Marni3DObject.h"
@@ -1529,6 +1530,10 @@ void render_room_objects(void)
             unsigned char* obj = (pass == 0)
                 ? (unsigned char*)g_omodel_table[i]
                 : (unsigned char*)g_item_model_table[i];
+
+            // Saturn: a slot the Saturn builds no model for is never drawn
+            // (GAME4 0x06055C5C tests the registry model handle).
+            if (pass == 0 && g_bSaturnMode && saturn_omodel_has_no_model(i)) continue;
 
             // Visible (bit 0) and with a bound model (AnimSlot ptr at +0x14).
             if ((obj != NULL) && ((*obj & 1) != 0) && (*(int*)(obj + 0x14) != 0)) {

@@ -29,6 +29,7 @@ extern void Room_SetupCollisionCallbacks(void);
 extern void Room_LoadEnemySoundBanks(void);
 
 #include "dc/ArrangeStages.h"   // room_file_stage()
+#include "saturn/SaturnBattle.h"
 
 // Entity model loading functions from EntityModelLoader.cpp
 extern void LoadEntityEMD(Entity* em, unsigned char entity_id);
@@ -224,6 +225,11 @@ unsigned int set_item_description_message(unsigned short descIndex, unsigned sho
 // ============================================================================
 void display_game_loading_message(void)
 {
+    // Saturn Battle Game loading message
+    if (g_bSaturnMode && g_saturnBattleActive) {
+        set_message_display(0x7f, 0);
+        Task_exit();
+    }
     if ( (g_main_state_flags2 & MSF2_ATTRACT_DEMO) != 0 ) {
         set_message_display(0x5d, 0);
         Task_exit();
@@ -253,6 +259,12 @@ void init_room(void)
     // next field. (Globals.h, get_stage_id)
     g_StageDataPtr = (void*)g_StageVoiceOffsetTable[get_stage_id()];
     g_RoomBgmStatePtr = &g_roomBgmState[get_stage_id() * 32];
+    
+    // Port-added: the Saturn Battle Game's arenas have their own BGM states
+    // (GAME5 0x0609ACDC), not the save's stage 1 row that the fold above picks.
+    if (unsigned char* battle = saturn_battle_bgm_states()) {
+        g_RoomBgmStatePtr = battle;
+    }
 
     set_player_animations_functions();
 
@@ -513,6 +525,21 @@ void room_set(void)
     // 0x004779c7: LoadRoomRdt()
     LoadRoomRdt();
 
+    // A failed RDT load leaves g_RdtPointer addressing the PREVIOUS room (or an
+    // empty buffer on the first room of a run), and everything below walks it
+    // unconditionally - camera pointers, vab_sound_file, the omodel and item
+    // tables, player_anim_header. LoadRoomRdt's own guard stops IT from
+    // relocating a stale buffer; it cannot stop this function from reading one.
+    // The original never meets a missing room file, so this is a port guard
+    // only, and it is the difference between a clean message and an access
+    // violation (it is how the first Battle Game play-test died, on a
+    // ROOM8100 that does not exist in any tree).
+    if (Room_RdtLoadFailed()) {
+        dbg_printf("[room] room_set abandoned: no RDT for room %02x of stage %d\n",
+                   (unsigned)g_roomId, (unsigned)g_stageId);
+        return;
+    }
+
     // 0x004779d6: object_delete_00442170(3)
     object_delete_00442170(3);
 
@@ -623,9 +650,18 @@ void room_set(void)
                     ENTITY->animBase = pPrevEntity->animBase;
                     ENTITY->modelLoadBuffer = pPrevEntity->modelLoadBuffer - 0xc;
                 } else {
+                    // Saturn Battle Game: arena 12's first zombie loads Zombie
+                    // Wesker's model and keeps its own type (GAME5 0x0603C9E8 /
+                    // 0x0603CA98). The last-model id stays the swapped one.
+                    const unsigned char originalId = ENTITY->id;
+                    const int wesker = g_bSaturnMode && g_saturnBattleActive &&
+                                       saturn_battle_model_override(ENTITY, (int)i);
+
                     // 0x00477bdc: Load new enemy model
                     g_LastEnemyModelId = ENTITY->id;
                     LoadEntityEMD(ENTITY, ENTITY->id + 4);
+
+                    if (wesker) ENTITY->id = originalId;
                 }
                 Entity_SetJoints(ENTITY, 0x7c);
                 InitAnimStructure((void*)ENTITY->modelLoadBuffer);
@@ -697,8 +733,18 @@ extern void empty_40ae40(int);
 // (0x00477d90) - Load RDT file for current room
 // Loads the Room Definition Table for the current stage/room, resolves internal
 // relative pointers to absolute addresses, and sets up SCD script pointers.
+// Port-only: did the last LoadRoomRdt() find its file? The original returns void
+// and never fails, so there is no return value to read; room_set() needs one.
+static int s_rdtLoadFailed = 0;
+
+int Room_RdtLoadFailed(void)
+{
+    return s_rdtLoadFailed;
+}
+
 void LoadRoomRdt(void)
 {
+    s_rdtLoadFailed = 0;
     static const char hexDigits[] = "0123456789abcdef";
 
     // 0x00477d97: Set g_RdtPointer to the current load buffer
@@ -726,6 +772,15 @@ void LoadRoomRdt(void)
     if (g_bDcMode && !dc_room_has_char_variant(fileStage, g_roomId)) {
         variant = 0;
     }
+    // Sega Saturn, Battle Game: the arena RDTs ship one file per room, not one
+    // per character, so the variant digit is always 0 there. The Saturn's
+    // LoadRoomRdt (GAME1 0x0603DD30) draws it from the character bit only when
+    // battle-mode bit 31 is clear, and saturn_battle_begin_run() clears the bit
+    // as well - this is the second of the two, and it is the one that decides
+    // the filename.
+    if (g_bSaturnMode && g_saturnBattleActive) {
+        variant = 0;
+    }
 
     sprintf(FILE_PATH, GAME_DATA_ROOT "stage%c\\room%c%c%c%c.rdt",
             hexDigits[fileStage + 1],
@@ -745,6 +800,7 @@ void LoadRoomRdt(void)
     if (LoadFile(FILE_PATH, g_RdtPointer, 1) == (size_t)-1) {
         dbg_printf("[room] %s could not be loaded - keeping the previous room's"
                    " RDT rather than relocating through it\n", FILE_PATH);
+        s_rdtLoadFailed = 1;
         return;
     }
 

@@ -1,4 +1,5 @@
 // PlayerAnimations.cpp - Player animation state machines (decompiled from Ghidra)
+#include "saturn/SaturnBattle.h"
 #include "../Globals.h"
 #include "../marni/MarniSystem.h"
 #include <cstdio>
@@ -4641,6 +4642,7 @@ static void player_behavior_14_autoaim_fire(void)
     // ---- ammo decrement + muzzle billboard (g_weaponFireBillboard b0 = frame)
     if (g_weaponFireBillboard[weaponIdx].b0 == g_playerEntity.animation_frame_id) {
         ((unsigned char*)g_ItemSlotsPointer)[g_EquippedItemId * 2 - 1] -= 1;
+        if (g_bSaturnMode) saturn_battle_count_shot(g_playerEntity.equippedWeaponId);  // GAME5 0x060337B8
 
         if (weaponIdx == 8) {   // special weapon: alternate billboard entry
             unsigned char ammo = weapon_autoaim_check();
@@ -4842,6 +4844,7 @@ static void player_behavior_14_autoaim_holdfire(void)
                                    &g_playerPosScratch, 0);
         }
         ((unsigned char*)g_ItemSlotsPointer)[g_EquippedItemId * 2 - 1] -= 1;
+        if (g_bSaturnMode) saturn_battle_count_shot(g_playerEntity.equippedWeaponId);  // GAME5 0x060337B8
     } else {
         // special weapons: interval fire while held. The table index is the
         // weapon id shifted by -99 (0x6f -> entry 12), which is why the FX
@@ -6707,7 +6710,11 @@ static void door_locked_message(unsigned int msgIndex)
 
 // 0x0041b59c: the transition. An instant full-screen black rect, one frame of
 // sleep, then StMask - not a fade. This is why the in-game door cut is instant.
-static void door_begin_transition(unsigned char* record)
+//
+// Not static: the Saturn Battle Game's arena warp hands its virtual door record
+// to this, the way GAME5's transition routine feeds its 5-byte table into the
+// same door path (saturn/SaturnBattle.cpp).
+void door_begin_transition(unsigned char* record)
 {
     g_pendingDoorRecord = (int)record;          // the room the transition will load
     g_main_state_flags |= MSF_GAMEPLAY_ACTIVE;

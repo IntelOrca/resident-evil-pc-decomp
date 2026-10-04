@@ -2,6 +2,7 @@
 
 #include "DcAssetsTab.h"
 #include "PcAssetsTab.h"
+#include "SaturnAssetsTab.h"
 
 #include <QTabWidget>
 
@@ -10,6 +11,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     auto* tabs = new QTabWidget(this);
     tabs->addTab(new PcAssetsTab(tabs), tr("PC Assets"));
     tabs->addTab(new DcAssetsTab(tabs), tr("Director's Cut"));
+    tabs->addTab(new SaturnAssetsTab(tabs), tr("Sega Saturn"));
     setCentralWidget(tabs);
     resize(760, 620);
 }
