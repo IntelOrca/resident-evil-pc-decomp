@@ -84,7 +84,7 @@ incomplete tree. The DC's miss log stays exactly as it was.
    Hunter, of `EM1017` of the naked zombie: the Saturn look is only in the
    Saturn sections.
 3. **The Saturn extras are code-side** (`SATURN_VERSION_ANALYSIS.md` §4g): Tick =
-   model swap for the Hunter on stage index 2; Zombie Wesker = type `0x17` forced
+   model swap for the Hunter on stage index 2 **plus GAME2's own Hunter code (§4i)**; Zombie Wesker = type `0x17` forced
    on arena `80C0`'s first enemy; Golden Tyrant = a +4/+3/−5 RGB555 palette tint
    in arena `80F0`; extra Tyrant capsules = `A_TRS1`/`A_TRS2` props. **All five
    `A_*` props are now mapped to their rooms**, and there are **two** capsules,
@@ -222,6 +222,21 @@ Each ends with something checkable; play-testing is the user's step.
 - **Tick**: the loader swap (Saturn `GAME5` `0x0604EA80`): on stage index 2,
   model index 10 (Hunter) loads index 26 (`em1016`). Done and **play-tested**.
   Still open: the Tick's sound bank.
+- **Tick behaviour** (2026-10-04, `src/game/saturn/SaturnTick.*`): the swap alone
+  is not the Tick. Stage byte 2 loads `GAME2.PRG`, whose Hunter is its own build:
+  a stretching-arm stab, a keyframe animator with three code-side animations, a
+  retuned variant-2 decision layer, and a hold on player flag `0x55`. Ported as
+  hooks in `entities/Hunter.cpp` (state init, variant dispatch / 0 / 2, chase,
+  pounce) plus an arm-scale hook in `rotate_entity` (`GteMatrix.cpp`) and the
+  slot reset in `room_set`, plus the Tick's own hold/decapitation (behaviour 7)
+  and four code-side animations (walk, stab, retract, decapitation) whose keys are
+  built with the Saturn's `Rz·Ry·Rx` rotation, not the PC's `RotMatrix`, and the
+  Tick stage's own player "bitten" machine (`g_playerAnimFunctions[44]`, hurt then
+  decapitated, instead of the PC's instant kill).
+  `tools/gen_tick_tables.py` generates
+  `SaturnTickAnim.cpp` from `GAME2.PRG`. Full function map and the Saturn → PC
+  field map in `SATURN_VERSION_ANALYSIS.md` §4i. **Untested in game** — compiled
+  only. Open: `Snd_em(8)`, the writer of the `0x55` player flag.
 - Check: stage 3 Hunters are Ticks in Saturn mode, stock elsewhere and in OG.
   **Done — the user confirmed Underground Ticks and stock mansion Hunters**, and
   the guard was read back out of the original at `0x0604EA80` to match.
@@ -540,7 +555,7 @@ Still to do:
 2. The score/ranking screens' exact colours, the name-entry character set and
    the save prompt's wording are not read from `RANKING.PRG` yet.
 3. Other Saturn audio: the campaign BGM arrangement, SE banks, room PCM banks,
-   `BATTLE.BIN`'s four unverified streams. (The Tick's exclusive sounds: migrated from `SE308.CDP` songs 0-7 as `SAT_TICK_*` and loaded over the Hunter's `He_*` slots in stage 2 by `saturn_tick_snd_name`; the slot = song mapping is inferred from the PC row's order and the samples being unique to stage 3, not traced in the Saturn's player code; untested in game.)
+   `BATTLE.BIN`'s four unverified streams. (The Tick's exclusive sounds: rendered from `SE308.CDP` as `SAT_TICK_*` and loaded over the Hunter's `He_*` slots 0-7, and slot 8 for the stab, in stage 2 by `saturn_tick_snd_name`. **The slot → song mapping is the bank's own table, not "song = slot"** (that first guess played a door-like thud for the footstep): `Snd_em(n)` looks up key `0x0800+n` in the 8-byte records at `SE308.CDP +0x800` (loaded to `0x002E8430`), song = id − 768, giving slots 0-8 → songs 9 10 5 8 6 3 4 7 16. Fixed 2026-10-04; re-run the Saturn tab or `re1am_selftest saturn … --no-models --no-rooms --no-bg --no-music` to regenerate; untested in game.)
 4. The Saturn's own title-menu art (above).
 
 ### Phase D — the room props and the lab's second Tyrant

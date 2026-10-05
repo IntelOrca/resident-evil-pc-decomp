@@ -106,6 +106,8 @@ set(RE1_SOURCES
     src/game/saturn/SaturnBattle.cpp
     src/game/saturn/SaturnModels.cpp
     src/game/saturn/SaturnRoomObjects.cpp
+    src/game/saturn/SaturnTick.cpp
+    src/game/saturn/SaturnTickAnim.cpp
     src/game/saturn/SaturnTitle.cpp
     src/game/saturn/SaturnTyrant.cpp
 

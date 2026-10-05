@@ -190,6 +190,8 @@
     <ClCompile Include="src\game\saturn\SaturnBattle.cpp" />
     <ClCompile Include="src\game\saturn\SaturnModels.cpp" />
     <ClCompile Include="src\game\saturn\SaturnRoomObjects.cpp" />
+    <ClCompile Include="src\game\saturn\SaturnTick.cpp" />
+    <ClCompile Include="src\game\saturn\SaturnTickAnim.cpp" />
     <ClCompile Include="src\game\saturn\SaturnTitle.cpp" />
     <ClCompile Include="src\game\saturn\SaturnTyrant.cpp" />
     <ClCompile Include="src\game\Rendering.cpp" />

@@ -9,6 +9,7 @@
 //  get_matrix_t (0x0040a9c0)
 #include "../Globals.h"
 #include "../platform/types.h"
+#include "saturn/SaturnTick.h"   // the Tick's stretching arm (rotate_entity)
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -866,23 +867,44 @@ void rotate_entity(MATRIX* parentMtx, void* animData, unsigned char jointIdx)
     unsigned short childListOffset = *(unsigned short*)(animBase + 2 + jointIdx * 4);
     unsigned char* childList = animBase + childListOffset;
 
+    // Sega Saturn, the Tick's stretching arm (saturn/SaturnTick.h): joints 4-6
+    // compose from a copy of the local transform whose offset is scaled, and
+    // the matrix the mesh is drawn with is scaled afterwards while the children
+    // keep composing from the unscaled one.
+    const bool tickArm = g_bSaturnMode && saturn_tick_joint_scaled(ent, jointIdx);
+    MATRIX tickLocal;
+    const MATRIX* local = &joint->transform;
+    if (tickArm) {
+        tickLocal = joint->transform;
+        saturn_tick_scale_local(ent, jointIdx, &tickLocal);
+        local = &tickLocal;
+    }
+    bool composed = false;
+
     // Apply parent transform to joint's local transform → joint's world matrix
     if ((joint->flags & 8) != 0 && (joint->flags & 0x40) == 0) {
-        ApplyLVAndMul0Matrix(parentMtx, &joint->transform, &joint->world);
+        ApplyLVAndMul0Matrix(parentMtx, (void*)local, &joint->world);
         unsigned char f = joint->flags;
         joint->flags = (f & 0xF5) | 0x50;
         joint->field_02 = 0;
+        composed = true;
     }
     if ((joint->flags & 2) != 0) {
-        ApplyLVAndMul0Matrix(parentMtx, &joint->transform, &joint->world);
+        ApplyLVAndMul0Matrix(parentMtx, (void*)local, &joint->world);
+        composed = true;
+    }
+    if (tickArm && composed) {
+        saturn_tick_scale_mesh(ent, jointIdx, &joint->world);
     }
 
     // Recurse into children
+    const MATRIX* childParent = &joint->world;
+    if (tickArm) childParent = saturn_tick_child_parent(ent, jointIdx, childParent);
     char childCount = *(char*)(animBase + jointIdx * 4);
     for (char i = childCount; i != 0; i--) {
         unsigned char childIdx = *childList;
         childList++;
-        rotate_entity(&joint->world, animData, childIdx);
+        rotate_entity((MATRIX*)childParent, animData, childIdx);
     }
 }
 

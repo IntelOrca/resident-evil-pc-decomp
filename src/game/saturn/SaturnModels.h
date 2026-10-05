@@ -51,8 +51,10 @@
 // The Tick is not a type at all - it is a MODEL SWAP in the Saturn's loader
 // (GAME5 `0x0604EA80`): when the current stage byte (`0x002F8660`) is 2 and the
 // model index is 10, the Hunter's `em1006`, index 26 is loaded instead. The
-// entity keeps type 6, so it runs the Hunter's AI, damage rows and sounds
-// unchanged; only the mesh and the animations baked with it are the Saturn's.
+// entity keeps type 6 and the Hunter's tables, damage rows and skeleton (the
+// Tick EMD's PS1 section is the Hunter's), but the module for that stage byte,
+// GAME2, has its own Hunter AI - the stab, the walk, the decision layer - which
+// is saturn/SaturnTick.h.
 #define SATURN_EMD_INDEX_HUNTER       10
 
 // The stage whose Hunters are Ticks: 0-indexed stage 2, the mansion main hall
@@ -72,9 +74,11 @@ unsigned char saturn_emd_model_index(unsigned char modelIndex);
 
 // The Tick's own sound effects. The Hunter's eight enemy-sound slots (0-7:
 // He_walkA, He_walkB, He_jump, He_att, He_land, He_smash, He_dam, He_Nout) are
-// filled, on the Saturn, from the stage-3 room SE bank (/SND/SE308.CDP songs
-// 0-7), which the asset migrator renders into SATURN/Sound as SAT_TICK_*. Given
-// a slot and the name the PC's room row holds for it, returns the Saturn's
-// replacement, or NULL when the slot is not a Hunter sound or the stage is not
-// the Tick's. Saturn mode only - the caller gates on g_bSaturnMode.
-const char* saturn_tick_snd_name(int slot, const char* baseName);
+// filled, on the Saturn, from the stage-3 room SE bank (/SND/SE308.CDP), which
+// the asset migrator renders into SATURN/Sound as SAT_TICK_*. The song a slot
+// plays is the one the bank's own table names (core/SaturnMusic.h), not song
+// <slot>. The Tick's stab also uses slot 8, empty on the PC. Given a slot, the
+// name the PC's room row holds for it and the row itself, returns the Saturn's
+// replacement, or NULL when the slot is not a Tick sound or the stage is not the
+// Tick's. Saturn mode only - the caller gates on g_bSaturnMode.
+const char* saturn_tick_snd_name(int slot, const char* baseName, const char* const* row);

@@ -30,6 +30,7 @@ extern void Room_LoadEnemySoundBanks(void);
 
 #include "dc/ArrangeStages.h"   // room_file_stage()
 #include "saturn/SaturnBattle.h"
+#include "saturn/SaturnTick.h"     // the Tick's animator slots, freed per room
 
 // Entity model loading functions from EntityModelLoader.cpp
 extern void LoadEntityEMD(Entity* em, unsigned char entity_id);
@@ -634,6 +635,10 @@ void room_set(void)
     // 0x00477c84: Set player joint movement data from RDT
     g_playerEntity.jointMoveData2 = (unsigned int)g_RdtPointer->player_anim_header;
     g_playerEntity.jointMoveData3 = (unsigned int)g_RdtPointer->player_anim_base;
+
+    // Sega Saturn: the room init frees the Tick animator's slots (GAME2
+    // 0x0603D36C -> 0x060705A8).
+    if (g_bSaturnMode) saturn_tick_room_reset();
 
     // 0x00477ca0: Reset enemy model cache and set up entity loop
     g_LastEnemyModelId = 0xff;

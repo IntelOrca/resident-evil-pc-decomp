@@ -103,7 +103,7 @@ struct SaturnMigrationOptions {
     // Render the Battle Game's own music (SND/BATTLE.CDP, SND/NAME.CDP) from
     // its sequences into SATURN/Sound (core/SaturnMusic.cpp).
     bool battleMusic = true;
-    // Render the Tick's exclusive sound effects (SND/SE308.CDP songs 0-7) into
+    // Render the Tick's exclusive sound effects (SND/SE308.CDP, the songs its slot table names) into
     // SATURN/Sound as SAT_TICK_*, mono (core/SaturnMusic.cpp).
     bool tickSfx = true;
     AudioFormat musicFormat = AudioFormat::Wav;

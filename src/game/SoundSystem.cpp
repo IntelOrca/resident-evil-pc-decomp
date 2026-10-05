@@ -1519,7 +1519,7 @@ void Room_LoadEnemySoundBanks(void) {
         // Sega Saturn: the Hunters of the main hall are Ticks, which have their
         // own sounds (saturn/SaturnModels.h).
         if (g_bSaturnMode) {
-            const char* tick = saturn_tick_snd_name(iVar6 / 4, slotName);
+            const char* tick = saturn_tick_snd_name(iVar6 / 4, slotName, soundTable);
             if (tick != NULL) slotName = tick;
         }
         emsnd_load_slot(iVar6 / 4, slotName);

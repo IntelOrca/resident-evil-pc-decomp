@@ -81,10 +81,11 @@ SaturnAssetsTab::SaturnAssetsTab(QWidget* parent) : QWidget(parent) {
     m_tickSfx->setChecked(true);
     m_tickSfx->setToolTip(
         tr("The Tick has its own sounds on the Saturn: SND/SE308.CDP (the main "
-           "hall bank, where the Hunters are Ticks) songs 0-7 - footsteps, jump, "
-           "attack, landing, smash, damage and death - rendered mono into "
-           "SATURN/Sound as SAT_TICK_*. The PC gives the Hunter He_walkA .. "
-           "He_Nout in the same eight slots."));
+           "hall bank, where the Hunters are Ticks) - footsteps, jump, attack, "
+           "landing, smash, damage, death and the arm striking the floor - "
+           "rendered mono into SATURN/Sound as SAT_TICK_*. The songs are the "
+           "ones the bank's own slot table names (id - 768), not songs 0-8; the "
+           "PC gives the Hunter He_walkA .. He_Nout in the first eight slots."));
     m_musicFormat = new QComboBox(this);
     m_musicFormat->addItem(tr("WAV (lossless, ~12 MB)"), false);
     m_musicFormat->addItem(tr("Ogg Vorbis (needs ffmpeg)"), true);

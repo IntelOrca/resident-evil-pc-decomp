@@ -1317,6 +1317,10 @@ unsigned int  ChkOutsideCell(VECTOR* position, SVECTOR* offset,
 unsigned char check_room_collision(VECTOR* position, short radius);    // 0x0047d310
 short         room_collision_check_0047da50(VECTOR* position,
                                             VECTOR* offset);           // 0x0047da50
+// The same point query with the boundary rectangles grown by `radius` (the PC
+// itself always passes 0; the Saturn Tick's path probe passes 2).
+short         room_collision_check_radius(VECTOR* position, VECTOR* offset,
+                                          unsigned int radius);
 // Line-of-sight query: does ENTITY -> ENTITY+delta cross a sight-blocking
 // boundary record in quadrant `cell`? 1 = blocked.
 unsigned int  room_check_sight_blocked(VECTOR* delta, unsigned char cell); // 0x0047db90

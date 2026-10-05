@@ -10,6 +10,8 @@
 
 #include "../../Globals.h"
 
+#include <cstring>
+
 const char* saturn_emd_path(unsigned char modelIndex, unsigned char jillBlock)
 {
     switch (modelIndex) {
@@ -42,13 +44,22 @@ unsigned char saturn_emd_model_index(unsigned char modelIndex)
     return modelIndex;
 }
 
-const char* saturn_tick_snd_name(int slot, const char* baseName)
+const char* saturn_tick_snd_name(int slot, const char* baseName, const char* const* row)
 {
-    static const char* const kTickSnd[8] = {
+    // Slot n is what Snd_em(n) plays; the samples come from the room's SE bank
+    // song its slot table names (not song n), see core/SaturnMusic.h.
+    static const char* const kTickSnd[9] = {
         "SAT_TICK_WALKA", "SAT_TICK_WALKB", "SAT_TICK_JUMP", "SAT_TICK_ATT",
         "SAT_TICK_LAND",  "SAT_TICK_SMASH", "SAT_TICK_DAM",  "SAT_TICK_NOUT",
+        "SAT_TICK_STUCK",
     };
-    if (g_stageId != SATURN_TICK_STAGE || slot < 0 || slot >= 8) return NULL;
+    if (g_stageId != SATURN_TICK_STAGE || slot < 0 || slot >= 9) return NULL;
+    // Slot 8 is empty on the PC (nothing to key on), and the stab's floor strike
+    // (Snd_em(8)) needs it. Only a room whose row is the Hunter's gets it.
+    if (slot == 8) {
+        if (row == NULL || row[0] == NULL || strcmp(row[0], "He_walkA") != 0) return NULL;
+        return kTickSnd[8];
+    }
     // Only the Hunter's own rows: the PC names those He_*, and every other
     // sound in the room (props, footsteps) stays as it is.
     if (baseName == NULL || baseName[0] != 'H' || baseName[1] != 'e' || baseName[2] != '_') {

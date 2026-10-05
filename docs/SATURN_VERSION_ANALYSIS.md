@@ -1642,8 +1642,12 @@ The EMDs' first section (shared within a creature family) puts `EM1016` with
 
 **Tick** — a model swap in the loader `0x0604EA80`: when the stage byte
 `0x002F8660` is **2** and the model index is 10 (Hunter, `em1006`), index 26
-(`em1016`) is loaded instead. The entity keeps type 6, so it runs the Hunter's
-AI; its different sounds are not traced yet.
+(`em1016`) is loaded instead. The entity keeps type 6 and the Hunter's tables,
+**but the module that holds stage byte 2 (`GAME2.PRG`) carries its own build of
+the Hunter's AI** — a stretching-arm stab, its own keyframe animator and a
+retuned decision layer. An earlier version of this note said the Tick "runs the
+Hunter's AI"; that was only ever checked for the table slot, not the code. See
+§4i.
 
 **Zombie Wesker** — a **model** override in the enemy model loop
 (`0x0603C9E8`), not a new type: in battle mode, arena index **12** (`80C0`,
@@ -2089,6 +2093,170 @@ the lab room loads exactly one, so it is a candidate trigger.
 `A_*` pairs where their rooms are ported), plus the 15 `STAGE8` RDTs. The
 golden Tyrant needs no asset. The Saturn EMDs use the Saturn mesh format
 (§5, §7 item 8), so they need a converter before the PC engine can draw them.
+
+### 4i. The Tick's own Hunter body (GAME2.PRG)  — read 2026-10-04
+
+Stage byte → module (`g_NextModule` = stage + 1): `0,1,5,6` → `GAME1`, **`2` →
+`GAME2`**, `3` → `GAME3`, `4` → `GAME4`; `GAME5` is the Battle Game. The Hunter
+update tables are `GAME1 0x060959A0`, `GAME2 0x06092F40`, `GAME5 0x0609B4F0`
+(type 6); `GAME3`/`GAME4` have an `rts` stub there.
+
+`GAME1` and `GAME5`'s Hunter code is the PC Hunter's, function for function
+(plus Saturn-wide tweaks such as the player-health gate `62 43` = 98/67). All the
+Hunter's data tables (SCA records, health roll, pounce rolls, intro tables) are
+identical in `GAME2`. **`GAME2` differs in exactly these functions** (every other
+Hunter function, the script-driven state-8 handlers included, compares
+identical; compared by decompiling both sides with constants folded, not by
+byte diff — a byte diff of two relocated modules is mostly literal pools):
+
+| GAME2 | GAME5 / PC | what changes |
+|---|---|---|
+| `0x0606C824` state init | `0x0606CD10` / `0x00416020` | + animator slot (`FUN_060705C4(e+0x188)`); installs the arm parts' scale flags; GAME5 instead clears two dead globals |
+| `0x0606D074` variant roll | `0x0606D4F4` / `0x004167F0` | **player** `+0x8A == 0x55` → state block `0x01010100`, skip the roll. Nothing in the campaign writes 0x55 |
+| `0x0606D10C` variant 0 | `0x0606D564` / `0x00416840` | leap tail: turn tolerance `0x20` (not `0x100`), `Add_speedXZ(0)`, behaviour 5, `+0x189 = 0`; no leap target |
+| `0x0606D484` variant 2 | `0x0606DA18` / `0x00416CA0` | rewritten (below) |
+| `0x0606D998` behaviour 1 | `0x0606E058` / `0x00417290` | the walk is animation `0x80` from the Tick's own tables; keyframe animator instead of `Joint_move`; arm scale reset on the first frame |
+| `0x0606DE98` behaviour 5 | `0x0606E51C` / `0x00417760` | the stab (`0x0606DF24`), then a slow turn toward the player; no pounce sub-table |
+| `0x0606E78C` behaviour 7 | `0x0606ECB4` / `0x00417EE0` | **the hold is the Tick's own**: it carries the player on the arm and decapitates them (below). An earlier pass marked this function "same" because the jump-table decompile hid its body |
+| `0x06070604` / `0x060705C4` / `0x060705A8` | — | the keyframe animator, slot alloc, slot reset (from the room init `0x0603D36C`) |
+
+**Variant 2** (`0x0606D484`): probes 0x800 ahead of the facing (`angle + 0xA0`)
+with the room-boundary point query (radius 2); rolls the pounce only while the
+player is hurt — `0 < health < maxHealth / 3` — against the Hunter's *low* table
+alone (`0x0609B8FC`), cancelled by distance > 4000, a set player flag or a
+blocked probe; then, in this order (later writes win): close in (behaviour 2,
+partner latched, < 6000) → **stab** (turn ≤ `0x20`, < 4000, latched; behaviour 5)
+→ howl (player flag `0x80`, < 3000; behaviour 9) → with the flag clear: swipe
+(line of sight, < 2000, turn ≤ `0x80`; behaviour 4) else dodge (the PC's test;
+behaviour 6).
+
+**The stab** (`0x0606DF24`, sub-state in `Entity+0x189`):
+
+| sub | does |
+|---|---|
+| 0 | animation `0x81`, `Snd_em(2)`, arm scale 1.0, `angle += 0xA0` |
+| 1 | play `0x81`; hold while frame is 1-7, then fall into 2 |
+| 2 | scale `< 0x4000`: wall-probe the tip (joint 6 world); stuck → billboard 8/8 at y 700, `Snd_em(8)`, sub 3. Sphere test (r 800) of the tip against the player → hit: flag 1, player pose anim 7 frame 6, hunter behaviour 7 (hold), billboard, joint tint, `Snd_em(3)`, player faces the Tick. Scale ≥ `0x4000` → clamp, sub 3. Every pass: `scale += (0x4800 − scale) / 4` (doubles, truncated) |
+| 3 | `scale −= 3276.8`; at ≤ `0x1000` → scale 1.0, animation `0x82`, sub 4 |
+| 4 | play `0x82`; sub 5 when it ends |
+| 5 | state block `0x01000100` (back to the AI layer, behaviour 1) |
+
+**The stretching arm** is joints 4 → 5 → 6 (the left arm chain of the
+Hunter-shaped skeleton). The Saturn draws parts with per-part scale (draw
+function `0x060708B0`, stride `0xA4`): flags `+0x64` `0x10/0x20/0x40` scale the
+MESH on X/Y/Z, `0x100` scales the part's own offset by its scale vector
+(`+0x80/84/88`); the saved world matrix (`+0x44`, children, hit tests) is
+unscaled. Init sets part 4 `|= 0x20`, part 5 `|= 0x120`, part 6 `|= 0x100`, all
+three scale vectors to 1.0; the stab writes `scale << 4` to the three Y scales
+every frame.
+
+**The animator** (`0x06070604(table, slotPtr, id)`): `table` = 12-byte entries
+at `0x0609B878`, index `id & 0xF`: `{u16 frames, u16 0, u32 rootKeys, u32
+keyArrays[16]}`; keys are `{u16 time, s16 x, s16 y, s16 z}`, held (not
+interpolated), the index advancing at most once per call when the *next*
+record's time is reached, each array ending with time `0xFFFE`. Slots are four
+`0x20`-byte records at `0x0609D5F4` (key-index bytes per joint, root index at
+`+0x1E`, in-use byte at `+0x1F`). Four animations: `0x80` walk (68 frames),
+`0x81` wind-up (14), `0x82` retract (14), `0x83` decapitation (49) — the table has **four** entries and ends at the
+Hunter's SCA record (`0x0609B8A8`); the units are the PS1 section's (the
+Tick's walk root is `(27, −1603, 5)`, the Hunter's chase `(27, −1547, 22)`).
+The Tick EMD's PS1 section is byte-identical to the Hunter's, so every other
+pose (swipe, dodge, death) plays from the EMD as for a Hunter.
+
+**Rotation convention — the keys are not the PS1 data's.** GAME2 has two
+part-draw routines, and the entity loop (`0x0602F2E4`) takes the Tick's
+(`0x06070794` → `0x060708B0`) only for type 6 **with `animationId & 0x80`**, i.e.
+only while a keyframe animation plays; every EMD animation goes through the
+generic one (`0x0603866C` → `0x060381A8`). Both read part `+4/+6/+8` (Joint_move
+`0x06039C68` and the animator store x/y/z there unchanged) and both call the same
+SGL primitives — `0x06082C94` = Rx, `0x06082C1C` = Ry, `0x06086E6C` = Rz, each
+post-multiplying by the standard matrix (3×4 rows of `0x10`, translation in the
+fourth column; `slTranslate 0x06086EE4` proves the layout) — but in opposite
+order:
+
+| routine | order |
+|---|---|
+| generic `0x060381A8` (root `0x06038404`, joints `0x060385C0`) | translate, Rx(+4), Ry(+6), Rz(+8) |
+| Tick `0x060708B0` (pool `0x06070BC8`) | translate, Rz(+8), Ry(+6), Rx(+4) |
+
+The generic order is the PS1 GTE's, and it is exactly what the PC draws for the
+Hunter's PS1 data — but the PC keeps its matrices **Y-flipped**: `RotMatrix`
+stores `Rx(−x)·Ry(y)·Rz(−z) = D·Rx(x)Ry(y)Rz(z)·D` with `D = diag(1,−1,1)`, and
+`CompMatrix`/`ApplyMatrixLV` negate Y on the way in and out, so what is drawn is
+`D·stored·D`. A Tick key must therefore be **stored** as `D·Rz(z)Ry(y)Rx(x)·D`,
+which in PC angles is the plain `Rx(a)Ry(b)Rz(c)` decomposition of `Rz·Ry·Rx`
+(no sign changes) — `tick_key_to_pc_angles`.
+
+Two wrong tries, both play-tested: storing the keys through `RotMatrix` (drawn
+`Rx·Ry·Rz`) put the stab arm overhead; storing `Rz·Ry·Rx` itself (drawn
+`D·Rz·Ry·Rx·D`, a mirror of every joint) made the Tick lean back with its legs
+splayed and thrust the stab off to the side. Measured in **drawn** space (raw
+offsets, effective matrices — what the verifier now does): the walk is the
+Hunter's forward hunch (head ahead of the pelvis at hip height, the Hunter's
+chase has it ahead and up), and the wind-up ends with the arm level (+5…+15°)
+and 13–19° off the heading, which the `0xA0` (14°) the stab turns the body by
+cancels. Forward is **+X** (`Add_speedXZ`, `RotMatrixY` = standard Ry; the
+Hunter's drawn swipe puts the right hand, joint 9, ~1500 ahead). Measuring the
+stored matrices as if they were drawn is what made the second try look right.
+
+**The hold** (`0x0606E78C`, behaviour 7, `Entity+0x87` sub-state):
+
+| sub | does |
+|---|---|
+| 0 | `0x0603A644(tip world, player local, 0x0609D5D4)` = `inverse(tip) · player` (only the rotation is kept); the block's translation is pinned to `(−1700, −800, −1100)` (`0xF95C 0xFCE0 0xFBB4`); player `Entity+3 \|= 0x80` (matrix externally controlled — `EntityComputeJointWorldMatrices` then skips `RotMatrix`); player look-at flags cleared; `+0xC4 = 8` |
+| 1 | count `+0xC4` down |
+| 2 | `scale −= 1146.88` a frame; every frame the player's local matrix = `tip · block` (`0x06055D08`), a blood billboard on joint 5 every 4th frame; at ≤ `0x1000`: scale 1.0, animation `0x83`, `+0xC4 = 8`, player `+3 &= 0x7F` |
+| 3 | wait `+0xC4`, then play `0x83` (49 frames): billboard at the tip with y −600 on frame 1; on frame 10 the player's `action_state = 4` (their own grabbed machine, `player_anim_grabbed`) |
+| 4 | state block `0x01010900` (state 1, ignore 1, behaviour 9, the howl) |
+
+The Hunter's hold does `animationId + 1` from the previous behaviour's id; after
+the Tick's stab that id is `0x81`, so on the PC it indexed a non-existent EMD
+animation and the Tick froze at the decapitation.
+
+**The player's side — `g_playerAnimFunctions[44]`.** The bite sets the player to
+`animationId 7 / animFrameId 6`; the player dispatcher (window 2, `0x26 +
+animFrameId`) sends that to entry **44**. GAME2's table setup (`0x06052FB8`; the
+same 14 indices the PC's `set_player_animations_functions` fills) installs its own
+function there, `0x0606FF78` (the PC's is `player_anim_dispatch_4c2ac8`, the
+original's 5-state death that sets `health = -1` in its first state, i.e. an
+instant kill). GAME2's has eight states, in the player's `Entity+0x87`:
+
+| state | does |
+|---|---|
+| 0 | frame 0, `flags \|= 6`, `+0xBC = 0xB4`, message flag `0x40` off, `+0xC4 = 0` |
+| 1 | the player's damage animation; frame 8: impact sound + tint on joints 0,1,2,9,12; blood on even frames < 9; billboard after `0x5F` |
+| 2 | `attackAnim` 1↔2, restart |
+| 3 | animation at half rate |
+| 4 | **the decapitation** — set by the Tick's hold on frame 10 of `0x83`: head (joint 1) hidden (`flags &= 0xFE`), flag `0x80`, two blood billboards, `Snd_em(5)` |
+| 5 | decapitation animation; blood every 4th frame 9–`0x2A`; tints on 3; sound on `0x2A`; **`health = -1` on frame `0x10`** |
+| 6 | corpse throw: push velocity −900 along the facing |
+| 7 | fade at `+0xBC == 0xA0`; `animationId = 4` (dead) at `0x20` |
+
+(6 and 7 are the PC's states 2 and 3.) So the player gets hurt and carried first and
+is killed only when the hold reaches the decapitation — and it applies to anything
+that bites in that stage, as on the Saturn.
+
+**Saturn → PC `Entity` fields** (the Saturn's tail layout is not the PC's):
+`+0x16C → +0x170` path latch, `+0x170 → +0x174` partner, `+0x17C → +0x180` room
+hit, `+0x17D → +0x182` pounce latch, `+0x17A → +0x17E` step word, `+0x182 →
++0x187` approach counter; `+0x183/+0x184/+0x185` are the same. `+0x186` (arm
+scale), `+0x188` (slot) and `+0x189` (stab) have no free PC bytes (the PC
+`Entity` is exactly `0x18C` and the Hunter uses to `+0x18A`), so the port keeps
+them in a side table keyed by entity (`src/game/saturn/SaturnTick.cpp`).
+
+**Sounds.** `Snd_em(n)` (`0x0605276C`) → `0x06065560(8, n, pan…)` looks up key
+`0x0800 + n` in a 26 × 8-byte RAM table at `0x002E8430` ({key, song id, …}).
+`LoadRoomSeBank` (`0x06051204`) clears it and loads `/SND/SE<stage+1><room>.CDP`,
+whose **first segment (file `+0x800`, `0x120` bytes) is that table**, so the
+slot → song map ships inside each bank. Song ids count from 768. In `SE308`:
+slots 0-8 → ids 777 778 773 776 774 771 772 775 784 → pack songs
+**9 10 5 8 6 3 4 7 16**. Other Hunter rooms hold the same samples under other
+song numbers (`SE30B`: 9 10 5 8 6 3 4 7, slot 8 = 19); slot 8 renders identically
+in both (2.09 s), so one bank serves every Tick room. (An earlier port took "song
+N = slot N" and played the wrong samples: the footstep was a door-like thud.)
+
+Not ported / open: the `hit_state` writer for the `0x55` hold; the walk's
+footstep timing was not re-derived from the tables.
 
 ### 4h. The second Tyrant's room, and the room art the Saturn re-drew
 

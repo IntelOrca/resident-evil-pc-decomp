@@ -1,5 +1,6 @@
 // PlayerAnimations.cpp - Player animation state machines (decompiled from Ghidra)
 #include "saturn/SaturnBattle.h"
+#include "saturn/SaturnTick.h"      // the Tick stage's bitten machine (entry 44)
 #include "../Globals.h"
 #include "../marni/MarniSystem.h"
 #include <cstdio>
@@ -2063,6 +2064,11 @@ static void player_state_init(void) // 0x00494eb0
 // ----------------------------------------------------------------------------
 static void player_dispatch_anim_fn(unsigned int index)
 {
+    // Sega Saturn, the Tick's stage: entry 44 (the bitten machine) is GAME2's own
+    // (0x0606FF78) - hurt first, decapitated when the Tick says so.
+    if (index == 44 && g_bSaturnMode && saturn_tick_player_bitten()) {
+        return;
+    }
     if (index >= 52 || g_playerAnimFunctions[index] == NULL) {
         static int lastReported = -1;
         if ((int)index != lastReported) {
