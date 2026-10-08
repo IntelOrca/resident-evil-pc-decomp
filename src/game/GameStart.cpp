@@ -608,7 +608,9 @@ void InitializeGame(void)
     g_AttractModeIdleTimer = 1;
     update_room_bgm();
 
-    if ((g_playerEntity.id & 3) == CHAR_JILL) {
+    // Port: the first-run Jill (no main-hall ribbon) is the PC's alone - see
+    // jill_needs_ink_ribbons (Globals.h).
+    if ((g_playerEntity.id & 3) == CHAR_JILL && !jill_needs_ink_ribbons()) {
         // Second playthrough marker (0x7B, set by EndingScreen after clearing).
         // On a FIRST Jill playthrough, arm the first-run-only room item flag
         int is_second_playthrough = Flg_ck((int)g_ScenarioFlags, SCENARIO_FLAG_SECOND_PLAYTHROUGH);

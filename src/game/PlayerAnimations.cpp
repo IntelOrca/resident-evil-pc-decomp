@@ -7259,7 +7259,9 @@ int check_typewriter(unsigned char* entry)
             g_message_flags = (unsigned short)g_message_flags & 0xffba;
             return 0;
         }
-        if ((g_playerEntity.id == 1) || (g_playerEntity.id == 5)) {
+        // The free save is the PC's first-run Jill rule; console releases have
+        // none (jill_needs_ink_ribbons, Globals.h).
+        if (((g_playerEntity.id == 1) || (g_playerEntity.id == 5)) && !jill_needs_ink_ribbons()) {
             if (Flg_ck((int)g_ScenarioFlags, SCENARIO_FLAG_SECOND_PLAYTHROUGH) == 0) {
                 g_pRoomActionEntry = entry;
                 *(unsigned short*)(entry + 2) = (unsigned short)ribbonSlot;

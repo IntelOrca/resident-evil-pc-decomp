@@ -544,6 +544,23 @@ static inline bool western_difficulty(void)
         || (g_bDcMode && g_DcDifficulty != DC_DIFFICULTY_TRAINING);
 }
 
+// Port-added. Whether Jill has to use ink ribbons like Chris. The PC release's
+// easy rule - a Jill whose SCENARIO_FLAG_SECOND_PLAYTHROUGH is clear saves
+// without a ribbon, never sees a ribbon pick-up and loses the main-hall one
+// (check_typewriter, LoadSaveGameState, cmd_item_model_set, InitializeGame) -
+// is the PC's alone: on the PS1 (USA and Japanese), the Saturn (USA and
+// Japanese) and the Director's Cut she always needs them. Western difficulty
+// gets this for free by raising the flag; the Japanese Saturn keeps the flag
+// down (Japanese damage rules) and still needs ribbons, so the rule is keyed
+// on the mode rather than on the difficulty. Every Saturn ribbon record exists
+// for Jill too (the rooms list it for both variants: 2 per pick-up on the USA
+// disc, 3 on the Japanese - which room_event_item_pickup's 2-or-3 already
+// gives).
+static inline bool jill_needs_ink_ribbons(void)
+{
+    return g_bSaturnMode || g_bDcMode;
+}
+
 // The game's random stream, mode-aware (Globals.cpp). The PC release recorded
 // its demo reels against the CRT rand; the PS1 DC uses its own LCG, so DC
 // sessions must roll the PS1 sequence for demo playback to line up. Every

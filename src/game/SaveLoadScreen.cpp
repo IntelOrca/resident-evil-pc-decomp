@@ -1107,9 +1107,10 @@ void LoadSaveGameState(int mode, int flags, int useInkRibbon, int sfxBank, int c
             // string is fully rebuilt below.)
 
             // Consume the ink ribbon. Jill needs the ribbon flag (bit 0x7B),
-            // Chris always spends one when the typewriter offers it.
+            // Chris always spends one when the typewriter offers it. Port: a
+            // console release's Jill always spends one (jill_needs_ink_ribbons).
             if ((useInkRibbon != 0) &&
-                (((g_playerEntityPointer.id & 3) != 1) ||
+                (((g_playerEntityPointer.id & 3) != 1) || jill_needs_ink_ribbons() ||
                  (Flg_ck((int)g_ScenarioFlags, SCENARIO_FLAG_SECOND_PLAYTHROUGH) != 0))) {
                 g_selectedItemId = ITEM_INK_RIBBONS;
                 use_room_action_item();

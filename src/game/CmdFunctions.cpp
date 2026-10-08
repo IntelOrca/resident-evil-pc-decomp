@@ -611,8 +611,10 @@ int cmd_item_model_set(void)
 {
     dbg_printf("ITEM MODEL START %s\n", "imodel_set");
 
-    // skip ink ribbon model set if jill's first playthrough
-    if ((char)g_ScdOpcodes[10] == ITEM_INK_RIBBONS && (g_playerEntity.id & 3) == 1) {
+    // skip ink ribbon model set if jill's first playthrough (the PC rule only:
+    // jill_needs_ink_ribbons, Globals.h)
+    if ((char)g_ScdOpcodes[10] == ITEM_INK_RIBBONS && (g_playerEntity.id & 3) == 1 &&
+        !jill_needs_ink_ribbons()) {
         if (Flg_ck((int)&g_ScenarioFlags, SCENARIO_FLAG_SECOND_PLAYTHROUGH) == 0) {
             FUN_00473f10((int*)&g_roomItemsFlags, g_ScdOpcodes[0x16]);
             g_ScdOpcodes += 0x1a;
@@ -776,7 +778,8 @@ int cmd_item_model_set(void)
     flagResult = Flg_ck((int)&g_roomItemsFlags, g_ScdOpcodes[0x16]);
     modelPtr[0] = (char)(1 - (flagResult == 0));
 
-    if ((char)g_ScdOpcodes[10] == ITEM_INK_RIBBONS && (g_playerEntity.id & 3) == CHAR_JILL) {
+    if ((char)g_ScdOpcodes[10] == ITEM_INK_RIBBONS && (g_playerEntity.id & 3) == CHAR_JILL &&
+        !jill_needs_ink_ribbons()) {
         if (Flg_ck((int)&g_ScenarioFlags, SCENARIO_FLAG_SECOND_PLAYTHROUGH) == 0) {
             modelPtr[0] = 0;
         }

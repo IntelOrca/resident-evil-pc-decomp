@@ -1067,7 +1067,10 @@ extern unsigned int Flg_ck(int baseAddr, unsigned int bitIndex);
 
 void check_desk_state(void)
 {
+    // Port: part of the PC's first-run Jill rules, which the DC dropped along
+    // with the ribbon ones (jill_needs_ink_ribbons, Globals.h).
     if ((g_stageId == STAGE_GUARDHOUSE) && (g_roomId == ROOM_003) && ((g_playerEntity.id & 3) == 1) &&
+        !jill_needs_ink_ribbons() &&
         (Flg_ck((int)g_ScenarioFlags, SCENARIO_FLAG_SECOND_PLAYTHROUGH) == 0)) {
         g_desk_check_state = 0;
     }
@@ -1139,7 +1142,9 @@ void check_typewriter_state(void)
     switch (g_typewriter_state) {
     case 1:
         g_typewriter_id = *(unsigned short*)((char*)g_pRoomActionEntry + 2);
-        if (((g_playerEntity.id == 1) || (g_playerEntity.id == 5)) &&
+        // Port: the ribbon-free prompt is the PC's first-run Jill rule
+        // (jill_needs_ink_ribbons, Globals.h).
+        if (((g_playerEntity.id == 1) || (g_playerEntity.id == 5)) && !jill_needs_ink_ribbons() &&
             (Flg_ck((int)g_ScenarioFlags, SCENARIO_FLAG_SECOND_PLAYTHROUGH) == 0)) {
             set_message_display(224, 0xff);   // "Will you save your progress?"
         } else {

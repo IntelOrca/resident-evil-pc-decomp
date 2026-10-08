@@ -12,6 +12,16 @@ the first set **Western difficulty** (`western_difficulty()` in `src/Globals.h`)
 | ink ribbon pick-up | 2 | 3 (forced in `room_event_item_pickup`) |
 | Jill | needs ribbons, main-hall ribbon present | no ribbon needed on a first run, main-hall ribbon removed |
 
+Jill's ribbons are **not only** a western rule: the ribbon-free first-run Jill is
+the PC's alone. Every console release - PS1 (USA and Japanese), Saturn (USA and
+Japanese), the Director's Cut - makes her use ribbons, whatever its damage
+rules. `jill_needs_ink_ribbons()` (Globals.h) therefore turns the PC's
+first-run Jill branches off for Saturn and DC mode on its own: the typewriter's
+free save and its "save your progress?" prompt, the ribbon pick-ups hidden from
+her, the main-hall ribbon and the guardhouse desk reset. That is what keeps the
+Japanese Saturn - Japanese damage rules, flag clear - on ribbons. Its rooms give
+3 per pick-up (all 40 ribbon `item_model_set` records; the USA Saturn's are 2).
+
 ## Where it is on
 
 `western_difficulty()` is true when any of:
