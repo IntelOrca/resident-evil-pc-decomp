@@ -1075,8 +1075,14 @@ def check_arena_sequence(saturn_src):
     check(draw_hud is not None and 's_battle.state == 1' in draw_hud.group(1)
           and 's_stageClearedHudText' in draw_hud.group(1),
           'the clear banner is drawn during the 120-frame pause')
-    check('s_battleRunFrames < BATTLE_MAX_RUN_FRAMES' in saturn_src,
+    check('s_battleRunFrames = BATTLE_MAX_RUN_FRAMES' in saturn_src,
           'the elapsed frame counter stops at the Saturn 99:59 limit')
+    # The counter is in 60ths (GAME5 0x0603662A, read as n / 3600 minutes) and
+    # the port's gameplay tick is 33 ms, so each tick is two 60ths. Adding one
+    # ran the clock at half speed.
+    check(re.search(r'#define BATTLE_RUN_FRAMES_PER_TICK\s+2\b', saturn_src) is not None
+          and 's_battleRunFrames += BATTLE_RUN_FRAMES_PER_TICK' in saturn_src,
+          'the run clock advances two 60ths per 30 Hz gameplay tick')
     check_enemy_count_derivation(saturn_src)
     check_arena_arming(saturn_src)
     check_clear_banner(saturn_src)

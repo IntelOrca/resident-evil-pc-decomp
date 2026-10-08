@@ -467,6 +467,8 @@ static constexpr char s_stageClearedHudText[] = "STAGE CLEAR>";
 #define BATTLE_NO_AMMO_GRACE      0xB3
 // GAME5's run-frame counter saturates at 99:59 (0x57E04 frames at 60 fps).
 #define BATTLE_MAX_RUN_FRAMES    0x57E04
+// The run counter is in 60ths of a second; the port's gameplay tick is 1/30 s.
+#define BATTLE_RUN_FRAMES_PER_TICK 2
 
 // Re-arm the per-arena half of the block, the one and only writer of
 // BB_FIGHT_ROOM. It runs every frame because the bit is a property of the ROOM,
@@ -2235,7 +2237,12 @@ void saturn_battle_tick_run(void)
 {
     if (!g_bSaturnMode || !g_saturnBattleActive) return;
     if (!battle_clock_running()) return;
-    if (s_battleRunFrames < BATTLE_MAX_RUN_FRAMES) s_battleRunFrames++;
+    // GAME5 0x0603662A adds 1 per HUD draw to a count read as 60ths of a second
+    // (mm = n / 3600, the 0x57E04 cap = 99:59). This hook runs once per gameplay
+    // tick, which the pump paces at 33 ms (30 per second), so one tick is two
+    // 60ths: adding 1 ran the clock at half speed.
+    s_battleRunFrames += BATTLE_RUN_FRAMES_PER_TICK;
+    if (s_battleRunFrames > BATTLE_MAX_RUN_FRAMES) s_battleRunFrames = BATTLE_MAX_RUN_FRAMES;
 }
 
 void saturn_battle_end_run(void)
