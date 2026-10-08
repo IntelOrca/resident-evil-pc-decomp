@@ -648,7 +648,8 @@ a port decision):
 - Remaining Saturn audio (`CD_PACK` campaign BGM/SE and room PCM, `X68 SSCONV`
   `.BIN` banks, and the Tick's exclusive sounds). The Battle Game's own tracks
   are migrated by the Saturn tab (§3).
-- Optional: `MOVIE.CPK`, the `BM60` title/ending art.
+- Optional: the `BM60` title/ending art. (`MOVIE.CPK` is migrated by the
+  Saturn tab's FMV option; `SATURN_VERSION_ANALYSIS.md` §6.)
 
 Any Saturn asset goes through the asset migrator, converted to a format the PC
 engine reads as it is (uncompressed); the game never decodes Saturn data.

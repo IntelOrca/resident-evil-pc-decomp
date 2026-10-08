@@ -57,6 +57,7 @@
 #include "core/SaturnBss.h"
 #include "core/SaturnEmd.h"
 #include "core/SaturnLz77.h"
+#include "core/SaturnMovie.h"
 #include "core/SaturnMusic.h"
 #include "core/SaturnObModel.h"
 #include "core/SaturnWardrobe.h"
@@ -311,7 +312,8 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
                            (int)(sizeof(kRoomBgs) / sizeof(kRoomBgs[0])) +
                            (int)(sizeof(kRoomRdts) / sizeof(kRoomRdts[0])) +
                            kWardrobeCount + 2;
-    const int total = fixedUnits + (int)allRoomList.size() + (opts.allBgm ? 1 : 0);
+    const int total = fixedUnits + (int)allRoomList.size() + (opts.allBgm ? 1 : 0) +
+                      (opts.movies ? 1 : 0);
     int done = 0;
 
     {
@@ -682,13 +684,24 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
         written.insert(written.end(), music.begin(), music.end());
         done += 2 + (opts.allBgm ? 1 : 0);
     }
+    if (opts.movies) {
+        // The bar counts movies while they encode (minutes of ffmpeg).
+        progress.phase(done, total, "movies");
+        std::vector<std::string> movies;
+        if (!migrateSaturnMovies(img, region, overlay, opts.ffmpegPath, progress, &movies,
+                                 error))
+            return false;
+        written.insert(written.end(), movies.begin(), movies.end());
+        ++done;
+    }
     progress.phase(total, total, "done");
 
     progress.info("not migrated yet (no PC asset / no engine support):");
     progress.info(std::string("  ") +
                   (opts.allBgm ? "" : "the campaign's Saturn BGM (optional), ") +
+                  (opts.movies ? "" : "the MOVIE.CPK FMV (optional), ") +
                   "the Saturn SE banks (SND/*.CDP, *.PCK), X68 SSCONV .BIN banks, "
-                  "MOVIE.CPK FMV, TITLE.BIN/END.BIN art, ENEMY/A_*.DAT props");
+                  "TITLE.BIN/END.BIN art, ENEMY/A_*.DAT props");
 
     // Manifest: what this overlay holds, for people and for later passes.
     std::string manifest =
@@ -716,6 +729,10 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
             else if (rel.rfind("Enemy/", 0) == 0) ok = checkPcEmd(d, &why);
             else if (rel.find(".pak") != std::string::npos)
                 ok = checkBackgroundPak(d, &why);
+            else if (rel.rfind("Movie/", 0) == 0) {
+                ok = d.size() > 12 && std::memcmp(d.data() + 4, "ftyp", 4) == 0;
+                if (!ok) why = "not an MP4 file";
+            }
             else if (rel.rfind("Sound/", 0) == 0) {
                 ok = d.size() > 44 && (std::memcmp(d.data(), "RIFF", 4) == 0 ||
                                        std::memcmp(d.data(), "OggS", 4) == 0);

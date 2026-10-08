@@ -2539,7 +2539,24 @@ sound bank: `IP00`–`IP92` and `IV00`–`IV75`, `OB01`–`OB99`, plus
   bitmap container. These are the Saturn title and ending art.
 - `DATA/BU_DATA.PCK` (62,404) — raw 16-bit Saturn pixels from byte 0, no header.
 - `0.BIN` (86,400), `FONT_000.BIN` (16,936), `FONT2.CEL` (551), `DATA/*.PRS`.
-- FMV: one `MOVIE.CPK` (250,490,880 B) played by `MOVIE.PRG`, instead of 25 `.STR`.
+- FMV: one `MOVIE.CPK` (250,490,880 B; Japan 257,513,472) played by `MOVIE.PRG`,
+  instead of 25 `.STR`. It is **28 Sega FILM 1.06 files end to end**, each
+  starting on a 2048-byte sector: Cinepak 320x224 at 15 fps, PCM stereo (movie 0,
+  the Capcom logo, 8-bit 44.1 kHz; the rest 16-bit 22.05 kHz). A FILM header's
+  length plus the end of its furthest STAB sample is the file's length, and
+  walking that chain from byte 0 ends exactly at the CPK's end on both discs.
+  Order (identical on both discs, checked by frame difference):
+  0 CAPCOM, 1 OU, 2-4 the prologue, 5 DM1, 6 DM2, 7 DM3, 8 DM4, 9 DM6, 10 DM7,
+  11 DMB, 12 DMC, 13 DMD, 14 DME, 15 DM8, 16 DMF, 17 ED1, 18 ED2, 19 ED3, 20 EU4,
+  21 EU5, 22 ED6, 23 ED7, 24 ED8, 25-27 the Chris / Jill / both staff rolls with
+  the credits in the picture (the PC's `stfc_r`/`stfj_r`/`stfz_r`; there is no
+  `staf_r`). The prologue is split where the PS1 cuts it for Jill: movie 2 is
+  exactly 2430 frames (`SLUS_001.70` PlayFMV's cut start, `0x97e`) and movie 3
+  (150 frames; Japan 2666 + 151) is the door / main hall beat, PC `PU.AVI`
+  162-172 s. The Japanese prologue has its subtitles drawn into the video; there
+  is no `JIMAKU*.RGB` or `STAFF*.STF` on either disc. Which movie `MOVIE.PRG`
+  plays for Jill was not read from the code - the split is the evidence.
+  Migrated by the Saturn tab's FMV option (`core/SaturnMovie.cpp`).
 
 > **The extracted copy in `assets/SATURN_ISO_CONTENT` is incomplete.** 101 of its files
 > are shorter than the ISO directory says - `SND/SDDRVS.PCK` is 4,096 B of

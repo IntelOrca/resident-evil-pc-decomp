@@ -161,7 +161,7 @@ of guessed. Run them from the repo root.
 player-facing asset import: a PC tab (a USA/JPN tree from a folder or a disc
 image, optional AVI→MP4) and a Director's Cut tab (a PS1 image only, so the
 `.STR` CD-XA audio survives; builds the `DC/` overlay, `.BSS`→`.pak`
-backgrounds and `.STR`→`.mp4`) and a Sega Saturn tab (builds `SATURN/`: the Tick / Zombie Wesker models converted to PC EMDs and the 15 decoded Battle Game arenas). It replaces the old `scripts/build_dc_assets.py`
+backgrounds and `.STR`→`.mp4`) and a Sega Saturn tab (builds `SATURN/`: the Tick / Zombie Wesker models converted to PC EMDs and the 15 decoded Battle Game arenas; optionally `MOVIE.CPK`'s 28 FILM movies -> `SATURN/Movie/*.mp4`, `re1am_selftest satcpk` lists them). It replaces the old `scripts/build_dc_assets.py`
 and is **not** part of the game build. Its core is Qt-free C++17, so
 `re1am_selftest.exe` runs it headlessly; see `tools/asset_migrator/README.md`.
 

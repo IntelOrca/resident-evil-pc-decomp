@@ -110,6 +110,13 @@ struct SaturnMigrationOptions {
     //   Saturn's BGM<group>.CDP sequences into SATURN/Sound under the PC's own
     //   file names (core/SaturnBgmTable.h).
     bool allBgm = false;
+    //   movies: MOVIE.CPK's 28 Sega FILM movies -> SATURN/Movie/<PC name>.mp4
+    //   (H.264 + AAC, needs ffmpeg; core/SaturnMovie.h). The prologue's three
+    //   Saturn files are joined into one, which the game cuts for Jill at the
+    //   Saturn's own boundaries. The disc has no PS1-form subtitles or credits
+    //   text (JIMAKU*.RGB, STAFF*.STF): the Japanese prologue has its subtitles
+    //   in the picture and the staff rolls their credits.
+    bool movies = false;
     // Write the PC/PS1 option typeface as SATURN/Data/TITLEFNT.BIN.
     bool titleFont = true;
     // Audio format and quality, for every rendered sound.

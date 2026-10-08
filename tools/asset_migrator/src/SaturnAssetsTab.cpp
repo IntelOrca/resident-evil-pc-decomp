@@ -60,6 +60,20 @@ SaturnAssetsTab::SaturnAssetsTab(QWidget* parent) : QWidget(parent) {
            "The Saturn plays its music as sequences on its sound chip; they are "
            "played here through a model of Sega's sound driver and the SCSP, "
            "reverb included. Off, the base tree's music plays."));
+    m_movies = new QCheckBox(tr("FMV: convert MOVIE.CPK to MP4 (needs ffmpeg)"), this);
+    m_movies->setChecked(false);
+    m_movies->setToolTip(
+        tr("Converts the Saturn's 28 movies (Sega FILM / Cinepak, 320x224) to "
+           "H.264 MP4 in SATURN/Movie under the PC's movie names, so Saturn mode "
+           "plays the Saturn's FMV.\n"
+           "The Saturn keeps the prologue as three files; they are joined into "
+           "one and the game skips the Chris-only part for Jill at the Saturn's "
+           "own cut points. The Japanese disc's prologue has its subtitles in the "
+           "picture, and the staff rolls their credits, so there is no separate "
+           "subtitle or credits data to migrate. The PC's fourth staff roll "
+           "(staf_r) has no Saturn version and stays the base tree's.\n"
+           "About 250 MB of source; takes a few minutes. Off, the base tree's "
+           "movies play."));
     m_musicFormat = new QComboBox(this);
     m_musicFormat->addItem(tr("WAV (lossless)"), false);
     m_musicFormat->addItem(tr("Ogg Vorbis (needs ffmpeg)"), true);
@@ -81,12 +95,14 @@ SaturnAssetsTab::SaturnAssetsTab(QWidget* parent) : QWidget(parent) {
     }
     // The format applies to every rendered sound (the Battle Game's music, the
     // Tick's effects and, when asked for, the campaign BGM), so it is always live.
+    // ffmpeg is needed for Ogg and for the movies.
     auto syncMusic = [this]() {
         const bool ogg = m_musicFormat->currentData().toBool();
         m_musicQuality->setEnabled(ogg);
-        m_ffmpeg->setEnabled(ogg);
+        m_ffmpeg->setEnabled(ogg || m_movies->isChecked());
     };
     connect(m_musicFormat, QOverload<int>::of(&QComboBox::currentIndexChanged), this, syncMusic);
+    connect(m_movies, &QCheckBox::toggled, this, syncMusic);
     syncMusic();
     m_verify = new QCheckBox(tr("Verify the overlay after building"), this);
     m_verify->setChecked(true);
@@ -95,6 +111,7 @@ SaturnAssetsTab::SaturnAssetsTab(QWidget* parent) : QWidget(parent) {
     form->addRow(tr("Target game folder:"), pathRow(m_target, browseTarget));
     form->addRow(tr("Optional:"), m_allRooms);
     form->addRow(QString(), m_allBgm);
+    form->addRow(QString(), m_movies);
     form->addRow(tr("Sound format:"), musicRow);
     form->addRow(QString(), m_verify);
 
@@ -115,11 +132,8 @@ SaturnAssetsTab::SaturnAssetsTab(QWidget* parent) : QWidget(parent) {
                "room data), the wardrobe room (patched so one of the two wardrobes "
                "offer the Saturn-only outfit) and the exclusive sound (Battle "
                "Game music, Tick "
-               "sound effects). The two optional migrations below are large.\n\n"
-               "Not migrated yet: the Saturn's sound-effect banks, the FMV "
-               "(MOVIE.CPK), the title and ending art, and the extra lab Tyrant "
-               "capsule itself (its A_TRS1 model). The game port selects this "
-               "overlay when [Game] Mode=SATURN is enabled."),
+               "sound effects). The optional migrations below are large.\n\n"
+               ""),
         this);
     note->setWordWrap(true);
 
@@ -137,6 +151,7 @@ SaturnAssetsTab::SaturnAssetsTab(QWidget* parent) : QWidget(parent) {
         opts.targetRoot = m_target->text().toStdString();
         opts.allRooms = m_allRooms->isChecked();
         opts.allBgm = m_allBgm->isChecked();
+        opts.movies = m_movies->isChecked();
         opts.musicFormat = m_musicFormat->currentData().toBool() ? re1::AudioFormat::Ogg
                                                                  : re1::AudioFormat::Wav;
         opts.oggQuality = m_musicQuality->value();

@@ -17,8 +17,9 @@
 //   re1am_selftest ps1audio <image> <tree> [--no-sfx] [--no-voices] [--no-bgm]
 //                     [--ogg] [--ogg-q N] [--ffmpeg <path>]
 //   re1am_selftest bgm <image> <BGM name> <out.wav>
-//   re1am_selftest saturn <image> <target> [--all-rooms] [--all-bgm] [--ogg]
-//                     [--ogg-q N] [--ffmpeg <path>] [--no-verify]
+//   re1am_selftest saturn <image> <target> [--all-rooms] [--all-bgm] [--movies]
+//                     [--ogg] [--ogg-q N] [--ffmpeg <path>] [--no-verify]
+//   re1am_selftest satcpk <image>   (MOVIE.CPK's FILM chain: offsets, frames)
 //   re1am_selftest satcdp <BATTLE.CDP> [segment-outdir]
 //   re1am_selftest satemd <saturn.EMD> <out.EMD>
 //   re1am_selftest satwardrobe <decoded ROOM11Cv.RDT> <out.RDT> [jpn]
@@ -39,6 +40,7 @@
 #include "core/Ps1Audio.h"
 #include "core/SaturnCdp.h"
 #include "core/SaturnEmd.h"
+#include "core/SaturnMovie.h"
 #include "core/SaturnSequenceBank.h"
 #include "core/SaturnSound.h"
 #include "core/SaturnToneBank.h"
@@ -310,6 +312,7 @@ int cmdSaturn(int argc, char** argv) {
     for (int i = 4; i < argc; ++i) {
         if (std::strcmp(argv[i], "--all-rooms") == 0) o.allRooms = true;
         if (std::strcmp(argv[i], "--all-bgm") == 0) o.allBgm = true;
+        if (std::strcmp(argv[i], "--movies") == 0) o.movies = true;
         if (std::strcmp(argv[i], "--ogg") == 0) o.musicFormat = AudioFormat::Ogg;
         if (std::strcmp(argv[i], "--ogg-q") == 0 && i + 1 < argc) o.oggQuality = std::atoi(argv[++i]);
         if (std::strcmp(argv[i], "--ffmpeg") == 0 && i + 1 < argc) o.ffmpegPath = argv[++i];
@@ -322,6 +325,30 @@ int cmdSaturn(int argc, char** argv) {
         std::printf("ERROR: %s\n", err.c_str());
         return 1;
     }
+    return 0;
+}
+
+// MOVIE.CPK's FILM chain, the way core/SaturnMovie.cpp reads it.
+int cmdSatCpk(const char* image) {
+    DiscImage img;
+    std::string err;
+    if (!img.open(image, &err)) {
+        std::printf("ERROR: %s\n", err.c_str());
+        return 1;
+    }
+    const DiscEntry* cpk = img.find("MOVIE.CPK");
+    std::vector<SaturnCpkMovie> movies;
+    if (!cpk || !parseSaturnCpk(img, *cpk, &movies, &err)) {
+        std::printf("ERROR: %s\n", cpk ? err.c_str() : "no /MOVIE.CPK");
+        return 1;
+    }
+    for (size_t i = 0; i < movies.size(); ++i) {
+        const SaturnCpkMovie& m = movies[i];
+        std::printf("%2zu  offset %10u  size %9u  %ux%u  base %3u  %5u frames (%7.3f s)  %4u audio\n",
+                    i, m.offset, m.size, m.width, m.height, m.timeBase, m.videoFrames,
+                    m.videoFrames / 15.0, m.audioChunks);
+    }
+    std::printf("%zu movies, MOVIE.CPK %u bytes\n", movies.size(), cpk->size);
     return 0;
 }
 
@@ -947,6 +974,7 @@ int main(int argc, char** argv) {
     if (cmd == "ps1audio" && argc >= 4) return cmdPs1Audio(argc, argv);
     if (cmd == "bgm" && argc >= 5) return cmdBgm(argv[2], argv[3], argv[4]);
     if (cmd == "saturn" && argc >= 4) return cmdSaturn(argc, argv);
+    if (cmd == "satcpk" && argc >= 3) return cmdSatCpk(argv[2]);
     if (cmd == "satcdp" && argc >= 3)
         return cmdSatCdp(argv[2], argc >= 4 ? argv[3] : "");
     if (cmd == "audioatomic") return cmdAudioAtomic();

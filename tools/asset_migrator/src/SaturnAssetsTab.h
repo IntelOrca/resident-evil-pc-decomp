@@ -23,6 +23,7 @@ private:
     QLineEdit* m_target = nullptr;
     QCheckBox* m_allRooms = nullptr;
     QCheckBox* m_allBgm = nullptr;
+    QCheckBox* m_movies = nullptr;
     QComboBox* m_musicFormat = nullptr;
     QSpinBox* m_musicQuality = nullptr;
     QLineEdit* m_ffmpeg = nullptr;
