@@ -2090,7 +2090,14 @@ void yawn_check_actions(void)
 // ============================================================================
 void yawn_init(void)
 {
-    set_state_word(0x00000101);   // state 1, ignore 0, behavior 1, action_state 0
+    // 0x00404cf9: MOV [ENTITY+0x84], 0x10001 - state 1, +0x85 = 0, behaviour 1
+    // (move), action_state 0. +0x85 must start at 0: it gates the decision tree
+    // (yawn_state_check), and neither idle nor move ever clears it. A Yawn that
+    // keeps this word - behaviour byte 2 or 6, i.e. one already in the room, like
+    // the Battle Game arena's - would otherwise slither forward and never look
+    // for the player until a hit (yawn_damaged_run) happened to clear the byte.
+    // The entrance path below overwrites +0x85/+0x86 anyway.
+    set_state_word(0x00010001);
 
     ENTITY->scaMatrixData.field_00 = 0;
     eub(ENTITY, 0x8a) = 0;
