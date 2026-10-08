@@ -1702,6 +1702,12 @@ static int PSXObject_EnumKind(int maxKinds, int* table, unsigned int* pkt, int n
                 } while (i < kindCount);
             }
             if (i == kindCount) {
+                // The original checks AFTER writing the entry, which writes one
+                // entry past the caller's table when it is full; check first.
+                if (kindCount >= maxKinds) {
+                    PSXObjDebugPrint("MarniSystem PSXObject::EnumKind: too many kinds\n");
+                    return 0;
+                }
                 kindCount = kindCount + 1;
                 PSXObject_KindDataSet(newEntry, *pkt,
                                       (short)(pkt[1] >> 0x10),
@@ -1928,8 +1934,20 @@ int PSXObject_Store(CMarniDirect3DTMD* self, int* tmdHdr, int objIndex,
 
     // Enumerate distinct primitive kinds (max 100 entries of 5 DWORDs)
     int kindTable[100 * 5];
+    // Guard the walk: EnumKind writes one 5-dword entry per distinct kind and a
+    // packet count read from a bad table runs it off kindTable (stack smash). A
+    // real object has few kinds and its packets are all 0x34000609-style, so a
+    // count this large is a corrupt table, not a model.
+    if (objEntry[5] < 0 || objEntry[5] > 20000) {
+        PSXObjDebugPrint("PSXObject::Store: object %d claims %d packets (hdr %p flags %x prim %p vert %p norm %p)\n",
+                         objIndex, objEntry[5], tmdHdr, tmdHdr[1], (void*)primPtr, (void*)vertBase, (void*)normBase);
+        return 0;
+    }
     int kindCount = PSXObject_EnumKind(100, kindTable, (unsigned int*)primPtr, objEntry[5]);
     if (kindCount >= 0x11 || kindCount == 0) {
+        PSXObjDebugPrint("PSXObject::Store: object %d np=%d hdr %p flags %x prim %p vert %p norm %p first %08x %08x %08x\n",
+                         objIndex, objEntry[5], tmdHdr, tmdHdr[1], (void*)primPtr, (void*)vertBase, (void*)normBase,
+                         ((unsigned*)primPtr)[0], ((unsigned*)primPtr)[1], ((unsigned*)primPtr)[2]);
         PSXObjDebugPrint("MarniSystem PSXObject::Store: kind enumeration failed\n");
         return 0;
     }

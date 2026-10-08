@@ -1718,10 +1718,16 @@ extern DWORD        g_effectAnimData[425];              // 0x00bf0b1c - per-type
 // move on its own. The guard absorbs every such spill; the model's own byte
 // offsets inside the load region are unchanged. Largest model loaded here:
 // char11.emd 112968 B (costume variants: em1030 112664 B).
+//
+// The Saturn's converted alternate outfits (SATURN/Enemy/EM1060/1061/1160/1161,
+// saturn/SaturnModels.h) are 197-229 KB: their TMD is ~22 KB and ends inside
+// `first` like the originals', but the multi-page TIM behind it runs 160-193 KB.
+// The guard is sized for 256 KB of spill so the largest of them (228,740 B, i.e.
+// ~120 KB past the pair) cannot reach whatever the linker put next.
 struct EntityModelStorage {
     BYTE first[52224];    // 0x00bf11c0
     BYTE second[56320];   // 0x00bfddc0
-    BYTE spillGuard[16384];  // not part of the original layout - see above
+    BYTE spillGuard[262144]; // not part of the original layout - see above
 };
 extern BYTE (&g_entityModelBuffer)[52224];
 extern BYTE (&g_entityModelBuffer2)[56320];

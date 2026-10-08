@@ -5,7 +5,17 @@
 //
 //   Enemy/EM1016.EMD, EM1116.EMD   the Tick (Chris / Jill model table block)
 //   Enemy/EM1017.EMD, EM1117.EMD   Zombie Wesker
+//   Enemy/EM1060.EMD, EM1061.EMD   Chris' two Saturn alternate outfits (disc EM1030,
+//   Enemy/EM1160.EMD, EM1161.EMD   EM1032) and Jill's (disc EM1031, EM1033). Renamed:
+//                                  the disc's names are the OG's and the DC's own
+//                                  alternate outfits, which these must not shadow
 //                                  -> converted to PC .EMDs (core/SaturnEmd)
+//   (all of the above, the arenas, the Tyrant room, the title font and the Battle
+//   Game's sound are always written; only the two switches below are optional)
+//   Stage1..7/ROOM*.RDT, RC*.pak   [allRooms] every other campaign room and its
+//                                  backgrounds, decoded
+//   Sound/<PC BGM name>            [allBgm] every campaign BGM, rendered from
+//                                  SND/BGM<group>.CDP
 //   Stage8/ROOM8010..80F0.RDT      the 15 Battle Game arenas, LZ77-decoded;
 //                                  decoded they are ordinary PS1 RDTs
 //   Stage5/RC5130..5137.pak        the Laboratory Tyrant room's backgrounds,
@@ -14,6 +24,10 @@
 //                                  the Saturn cannot do translucent glass, and
 //                                  the second capsule is in this room)
 //                                  -> decoded and re-packed (core/SaturnBss)
+//   Stage1/ROOM11C0/1.RDT,         the wardrobe, decoded and patched so the
+//   Stage6/ROOM61C0/1.RDT          Saturn's two outfits are offered by the room
+//                                  script (core/SaturnWardrobe): on the Saturn
+//                                  they are GAME5 code, not RDT data
 //   Data/TITLEFNT.BIN              the PC/PS1 option typeface for the title menu
 //                                  (NEW GAME / LOAD GAME / EXTRA). Not on the
 //                                  disc - the Saturn menu uses another font -
@@ -43,23 +57,44 @@
 #include "core/SaturnLz77.h"
 #include "core/SaturnMusic.h"
 #include "core/SaturnObModel.h"
+#include "core/SaturnWardrobe.h"
 #include "core/TitleFont.h"
 #include "core/Tim.h"
 #include "core/Util.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <set>
 
 namespace re1 {
 
 namespace {
 
-const char* const kModels[][2] = {
-    {"EM1016.EMD", "the Tick (Chris's game)"},
-    {"EM1116.EMD", "the Tick (Jill's game)"},
-    {"EM1017.EMD", "Zombie Wesker (Chris's game)"},
-    {"EM1117.EMD", "Zombie Wesker (Jill's game)"},
+// disc file -> overlay file. The creatures keep the disc's names (their model-
+// table slots are the PC's placeholders, saturn/SaturnModels.h). The alternate
+// outfits do NOT: the Saturn calls them EM1030..EM1033 - the very names the PC
+// and the DC give their own alternate outfits - so the overlay files take names
+// no release uses (EM106x Chris, EM116x Jill; the same 10xx/11xx split as the
+// creatures), and the port selects them by model-table index, not by name. That
+// is what keeps them from colliding with the OG and DC outfits.
+struct Model {
+    const char* disc;
+    const char* out;
+    const char* what;
 };
+
+const Model kModels[] = {
+    {"EM1016.EMD", "EM1016.EMD", "the Tick (Chris's game)"},
+    {"EM1116.EMD", "EM1116.EMD", "the Tick (Jill's game)"},
+    {"EM1017.EMD", "EM1017.EMD", "Zombie Wesker (Chris's game)"},
+    {"EM1117.EMD", "EM1117.EMD", "Zombie Wesker (Jill's game)"},
+    {"EM1030.EMD", "EM1060.EMD", "Chris, Saturn alternate outfit 1"},
+    {"EM1032.EMD", "EM1061.EMD", "Chris, Saturn alternate outfit 2"},
+    {"EM1031.EMD", "EM1160.EMD", "Jill, Saturn alternate outfit 1"},
+    {"EM1033.EMD", "EM1161.EMD", "Jill, Saturn alternate outfit 2"},
+};
+constexpr int kModelCount = (int)(sizeof(kModels) / sizeof(kModels[0]));
 
 const char* const kArenas[] = {"ROOM8010.RDT", "ROOM8020.RDT", "ROOM8030.RDT",
                                "ROOM8040.RDT", "ROOM8050.RDT", "ROOM8060.RDT",
@@ -94,6 +129,15 @@ struct RoomRdt {
     int roomId;
     const char* why;
 };
+
+// The wardrobe rooms (stage 1 and its revisit copy, stage 6), both character
+// variants: written always, patched by patchSaturnWardrobeRdt. Without them the
+// base tree's room would run the PC's one-shot costume script.
+const char* const kWardrobeRdts[][2] = {
+    {"STAGE1", "ROOM11C0.RDT"}, {"STAGE1", "ROOM11C1.RDT"},
+    {"STAGE6", "ROOM61C0.RDT"}, {"STAGE6", "ROOM61C1.RDT"},
+};
+constexpr int kWardrobeCount = (int)(sizeof(kWardrobeRdts) / sizeof(kWardrobeRdts[0]));
 
 const RoomRdt kRoomRdts[] = {
     {"STAGE5", "ROOM5130.RDT", '5', 0x13,
@@ -205,30 +249,63 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
     progress.info("target: " + overlay);
 
     std::vector<std::string> written;
-    const int total = (opts.convertModels ? 4 : 0) + (opts.arenaRooms ? 15 : 0) +
-                      (opts.roomBackgrounds
-                           ? (int)(sizeof(kRoomBgs) / sizeof(kRoomBgs[0])) +
-                                 (int)(sizeof(kRoomRdts) / sizeof(kRoomRdts[0]))
-                           : 0) +
-                      (opts.battleMusic ? 1 : 0) + (opts.tickSfx ? 1 : 0);
+    // The Saturn disc's campaign rooms and backgrounds, for the optional pass.
+    struct DiscRoom {
+        const DiscEntry* rdt;     // STAGEn/ROOMsRRv.RDT
+        const DiscEntry* bss;     // STAGEn/ROOMsRR.BSS, may be null
+        std::string rdtName;      // ROOMsRRv.RDT
+        std::string bssName;
+        char stageDigit;
+        int roomId;
+    };
+    std::vector<DiscRoom> allRoomList;
+    if (opts.allRooms) {
+        for (const DiscEntry& e : img.entries()) {
+            if (e.directory) continue;
+            const size_t slash = e.path.rfind('/');
+            if (slash == std::string::npos || slash < 6) continue;
+            const std::string folder = e.path.substr(slash - 6, 6);
+            const std::string file = e.path.substr(slash + 1);
+            // STAGE1..STAGE7: STAGE8 is the Battle Game's, written above.
+            if (folder.compare(0, 5, "STAGE") != 0 || folder[5] < '1' || folder[5] > '7' ||
+                file.size() != 12 || file.compare(0, 4, "ROOM") != 0 ||
+                file.compare(8, 4, ".RDT") != 0)
+                continue;
+            DiscRoom r;
+            r.rdt = &e;
+            r.rdtName = file;
+            r.stageDigit = folder[5];
+            r.roomId = (int)std::strtol(file.substr(5, 2).c_str(), nullptr, 16);
+            r.bssName = file.substr(0, 7) + ".BSS";
+            r.bss = img.findInFolder(folder, r.bssName);
+            allRoomList.push_back(std::move(r));
+        }
+    }
+
+    // Progress units: the fixed work, plus a unit per room and per BGM when asked.
+    const int fixedUnits = kModelCount + 15 +
+                           (int)(sizeof(kRoomBgs) / sizeof(kRoomBgs[0])) +
+                           (int)(sizeof(kRoomRdts) / sizeof(kRoomRdts[0])) +
+                           kWardrobeCount + 2;
+    const int total = fixedUnits + (int)allRoomList.size() + (opts.allBgm ? 1 : 0);
     int done = 0;
 
-    if (opts.convertModels) {
-        progress.info("models: Saturn-only creatures -> PC .EMD");
-        for (const auto& m : kModels) {
+    {
+        progress.info("models: Saturn-only creatures and alternate outfits -> PC .EMD");
+        for (const Model& m : kModels) {
             if (progress.isCancelled()) {
                 if (error) *error = "cancelled";
                 return false;
             }
-            progress.phase(done++, total, m[0]);
+            progress.phase(done++, total, m.disc);
             std::vector<uint8_t> src, pc;
-            if (!readDiscFile(img, "ENEMY", m[0], &src, error)) return false;
+            if (!readDiscFile(img, "ENEMY", m.disc, &src, error)) return false;
             SaturnEmdInfo info;
             if (!convertSaturnEmd(src, &pc, &info, &err)) {
-                if (error) *error = std::string(m[0]) + ": " + err;
+                if (error) *error = std::string(m.disc) + ": " + err;
                 return false;
             }
-            const std::string rel = std::string("Enemy/") + m[0];
+            const std::string rel = std::string("Enemy/") + m.out;
             if (!writeFile(joinPath(overlay, rel), pc)) {
                 if (error) *error = "cannot write " + joinPath(overlay, rel);
                 return false;
@@ -236,15 +313,15 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
             written.push_back(rel);
             char line[256];
             snprintf(line, sizeof(line),
-                     "  %s  %s: %d parts, %d palettes, %d textures -> %d page(s), "
+                     "  %s -> %s  %s: %d parts, %d palettes, %d textures -> %d page(s), "
                      "TIM 256x%d, %zu bytes",
-                     m[0], m[1], info.parts, info.palettes, info.textures,
+                     m.disc, m.out, m.what, info.parts, info.palettes, info.textures,
                      info.pages, info.timHeight, pc.size());
             progress.info(line);
         }
     }
 
-    if (opts.arenaRooms) {
+    {
         progress.info("rooms: Battle Game arenas (STAGE8) -> decoded RDTs");
         size_t relabelled = 0;
         for (const char* name : kArenas) {
@@ -279,8 +356,8 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
                       " texel(s) moved onto the index-0 transparency key");
     }
 
-    if (opts.roomBackgrounds) {
-        progress.info("rooms: backgrounds the Saturn re-drew -> PC paks");
+    {
+        progress.info("rooms: the Laboratory Tyrant room's backgrounds -> PC paks");
         for (const RoomBg& bg : kRoomBgs) {
             if (progress.isCancelled()) {
                 if (error) *error = "cancelled";
@@ -395,6 +472,130 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
             }
         }
     }
+    {
+        progress.info("rooms: the wardrobe (room 1C, stages 1 and 6) -> patched RDTs");
+        for (const auto& w : kWardrobeRdts) {
+            if (progress.isCancelled()) {
+                if (error) *error = "cancelled";
+                return false;
+            }
+            progress.phase(done++, total, w[1]);
+            std::vector<uint8_t> packed, rdt;
+            if (!readDiscFile(img, w[0], w[1], &packed, error)) return false;
+            std::string why;
+            if (!saturnLz77Decode(packed.data(), packed.size(), &rdt, nullptr, &why)) {
+                if (error) *error = std::string(w[1]) + ": " + why;
+                return false;
+            }
+            // The same PS1 colour-key relabel the "All rooms" pass gives every
+            // other room, so the two passes write the same art.
+            for (const auto& blk : iterTimBlocks(rdt)) foldTimTransparency(&rdt, blk);
+            const size_t before = rdt.size();
+            if (!patchSaturnWardrobeRdt(&rdt, &why)) {
+                if (error) *error = std::string(w[1]) + ": " + why;
+                return false;
+            }
+            const std::string stageRel = std::string("Stage") + w[0][5];
+            const std::string dir = joinPath(overlay, stageRel);
+            if (!makeDirs(dir)) {
+                if (error) *error = "cannot create " + dir;
+                return false;
+            }
+            const std::string rel = stageRel + "/" + w[1];
+            if (!writeFile(joinPath(overlay, rel), rdt)) {
+                if (error) *error = "cannot write " + joinPath(overlay, rel);
+                return false;
+            }
+            written.push_back(rel);
+            progress.info(std::string("  ") + w[1] + ": " + std::to_string(before) + " -> " +
+                          std::to_string(rdt.size()) +
+                          " B (area 4 = outfit 2, area 5 = outfit 1, Saturn texts as room "
+                          "messages 3-5)");
+        }
+    }
+    if (opts.allRooms) {
+        progress.info("rooms: every campaign room and background (optional) -> SATURN/Stage1..7");
+        // The Laboratory Tyrant room (stage 5, room 0x13) was written above with
+        // the Saturn's omodel patch and its own re-drawn backgrounds; the generic
+        // copy must not overwrite it.
+        std::set<std::string> bssDone;
+        int rdtCount = 0, bgCount = 0;
+        size_t relabelled = 0;
+        for (const DiscRoom& r : allRoomList) {
+            if (progress.isCancelled()) {
+                if (error) *error = "cancelled";
+                return false;
+            }
+            progress.phase(done++, total, r.rdtName);
+            if (r.stageDigit == '5' && r.roomId == 0x13) continue;
+            // The wardrobe was written above, patched; keep its backgrounds.
+            const bool wardrobe = (r.stageDigit == '1' || r.stageDigit == '6') && r.roomId == 0x1C;
+            const std::string stageRel = std::string("Stage") + r.stageDigit;
+            const std::string dir = joinPath(overlay, stageRel);
+            if (!makeDirs(dir)) {
+                if (error) *error = "cannot create " + dir;
+                return false;
+            }
+            // A PC .RDT is a plain file. The Saturn's is the PS1's, LZ77-packed;
+            // decoded it is the PS1 room, and like the arenas it needs the PS1
+            // colour-key -> PC index-0 transparency relabel (the PC release did the
+            // same to its own copies).
+            if (!wardrobe) {
+                std::vector<uint8_t> packed, rdt;
+                if (!img.readFile(*r.rdt, &packed)) {
+                    if (error) *error = "cannot read " + r.rdt->path;
+                    return false;
+                }
+                std::string why;
+                if (!saturnLz77Decode(packed.data(), packed.size(), &rdt, nullptr, &why)) {
+                    if (error) *error = r.rdtName + ": " + why;
+                    return false;
+                }
+                for (const auto& blk : iterTimBlocks(rdt))
+                    relabelled += foldTimTransparency(&rdt, blk);
+                const std::string rel = stageRel + "/" + r.rdtName;
+                if (!writeFile(joinPath(overlay, rel), rdt)) {
+                    if (error) *error = "cannot write " + joinPath(overlay, rel);
+                    return false;
+                }
+                written.push_back(rel);
+                ++rdtCount;
+            }
+
+            // The room's backgrounds, once for both character variants.
+            if (!r.bss || !bssDone.insert(r.bssName).second) continue;
+            std::vector<uint8_t> bssData;
+            if (!img.readFile(*r.bss, &bssData)) {
+                if (error) *error = "cannot read " + r.bss->path;
+                return false;
+            }
+            std::vector<SaturnBssFrame> frames;
+            if (!saturnBssDecode(bssData.data(), bssData.size(), &frames, &err)) {
+                // Stage 3 room 0x11 is the scrapped heliport: a 641-byte stub RDT
+                // and a 22 KB placeholder .BSS that is not a container. It is the
+                // only one on the disc; skip it, but say so, so a different file
+                // failing the same way is noticed.
+                progress.info("  " + r.bssName + ": " + err + " (" +
+                              std::to_string(bssData.size()) + " B) - no background written");
+                continue;
+            }
+            for (const SaturnBssFrame& f : frames) {
+                const std::string name = pakName(r.stageDigit, r.roomId, f.index);
+                const std::vector<uint8_t> pak = lzwPack(makeBackgroundTim(f.rgb));
+                const std::string prel = stageRel + "/" + name;
+                if (!writeFile(joinPath(overlay, prel), pak)) {
+                    if (error) *error = "cannot write " + joinPath(overlay, prel);
+                    return false;
+                }
+                written.push_back(prel);
+                ++bgCount;
+            }
+        }
+        progress.info("  " + std::to_string(rdtCount) + " room file(s), " +
+                      std::to_string(bgCount) + " background(s); " +
+                      std::to_string(relabelled) +
+                      " texel(s) moved onto the index-0 transparency key");
+    }
     if (opts.titleFont) {
         progress.info("title menu font -> Data/TITLEFNT.BIN");
         const std::vector<uint8_t> font = buildTitleFont();
@@ -407,7 +608,7 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
         written.push_back(rel);
         progress.info("  " + rel + " (" + std::to_string(font.size()) + " bytes)");
     }
-    if (opts.battleMusic) {
+    {
         progress.info("music: the Battle Game's own tracks -> rendered from the sequences");
         // The Battle Game's results screens (RANKING.PRG 0x0602B1E4): their
         // background BMP, both fonts and palettes are in /BATTLE.BIN (X68
@@ -430,25 +631,31 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
             progress.info("  " + rel + " (results screens, " + std::to_string(d.size()) + " bytes)");
         }
     }
-    if (opts.battleMusic || opts.tickSfx) {
-        progress.info("audio: the Battle Game's tracks and the Tick's sound effects -> "
-                      "rendered from the sequences");
+    {
+        progress.info(opts.allBgm
+                          ? "audio: the Battle Game's tracks, the Tick's sound effects and "
+                            "every campaign BGM -> rendered from the sequences"
+                          : "audio: the Battle Game's tracks and the Tick's sound effects -> "
+                            "rendered from the sequences");
         progress.phase(done, total, "audio");
         SaturnMusicOptions mo;
-        mo.music = opts.battleMusic;
-        mo.tickSfx = opts.tickSfx;
+        mo.music = true;
+        mo.tickSfx = true;
+        mo.allBgm = opts.allBgm;
         mo.format = opts.musicFormat;
         mo.oggQuality = opts.oggQuality;
         mo.ffmpegPath = opts.ffmpegPath;
         std::vector<std::string> music;
         if (!migrateSaturnMusic(img, overlay, mo, progress, &music, error)) return false;
         written.insert(written.end(), music.begin(), music.end());
-        done += 2 - (opts.battleMusic ? 0 : 1) - (opts.tickSfx ? 0 : 1);
+        done += 2 + (opts.allBgm ? 1 : 0);
     }
     progress.phase(total, total, "done");
 
     progress.info("not migrated yet (no PC asset / no engine support):");
-    progress.info("  the campaign's Saturn BGM/SE (SND/*.CDP, *.PCK), X68 SSCONV .BIN banks, "
+    progress.info(std::string("  ") +
+                  (opts.allBgm ? "" : "the campaign's Saturn BGM (optional), ") +
+                  "the Saturn SE banks (SND/*.CDP, *.PCK), X68 SSCONV .BIN banks, "
                   "MOVIE.CPK FMV, TITLE.BIN/END.BIN art, ENEMY/A_*.DAT props");
 
     // Manifest: what this overlay holds, for people and for later passes.
@@ -482,7 +689,10 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
                                        std::memcmp(d.data(), "OggS", 4) == 0);
                 if (!ok) why = "not a WAV / Ogg file";
             }
-            else if (d.size() < 0x100) { ok = false; why = "too small for an RDT"; }
+            // A 4-byte RDT is a real thing: 28 unused rooms (4 in stage 1, 24 in
+            // stage 2) are 4-byte placeholders on the PS1 and the PC alike, and
+            // decode to exactly that here.
+            else if (d.size() < 0x100 && d.size() != 4) { ok = false; why = "too small for an RDT"; }
             if (!ok) {
                 ++bad;
                 progress.info("  FAIL " + rel + ": " + why);

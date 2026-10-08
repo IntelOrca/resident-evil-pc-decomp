@@ -110,6 +110,13 @@ void saturn_battle_restore_mode(void);
 // run is in Saturn mode. Used by LoadEntityEMD and room_set.
 int saturn_battle_dc_outfit(void);
 
+// True while a Battle Game run started from OG or DC is borrowing Saturn mode
+// (battle_enter_saturn_mode), i.e. the Saturn is not the mode config.ini chose.
+// Anything the Saturn changes about the CAMPAIGN (not the Battle Game's own
+// content) must stay off during such a run - the player is still in the OG/DC
+// save, with its outfit.
+int saturn_mode_is_borrowed(void);
+
 // Raise the unlock and write it into the card, so the next save carries it. The
 // Saturn does this at the top of ENDING.PRG (0x0602DC28): any ending counts.
 void saturn_battle_unlock(void);

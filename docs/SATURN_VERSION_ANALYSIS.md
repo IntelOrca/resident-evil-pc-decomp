@@ -2719,8 +2719,8 @@ loads `BGM34B.CDP` and its channel 2 (state `0x20`) is the Tyrant battle. At
 the end of the run (`0x06088BDE`) the Tyrant theme stops, `BATTLE.CDP` is
 loaded again and **song 1** - a 14.4 s one-shot fanfare - starts. BATTLE song 0
   is the 25.3 s arena loop. `RANKING.PRG` loads `NAME.CDP` (one looping song,
-  the ranking / name entry). The migrator writes them as `SAT_BATTLE`,
-  `SAT_BATTLE_END`, `SAT_BATTLE_TYRANT` and `SAT_RANKING`; the port's tables and
+  the ranking / name entry). The migrator writes them as `Bgm_58` (battle mode bgm),
+  `Bgm_59` (battle mode finished), `Bgm_24` (Tyrant Battle) and `Bgm_5a` (Battle game ranking bgm); the port's tables and
   names are checked by `tools/verify_saturn_battle.py`.
 
 ---

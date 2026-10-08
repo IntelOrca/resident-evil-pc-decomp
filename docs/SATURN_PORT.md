@@ -50,12 +50,15 @@ versions stay in use.
 |---|---|---|
 | `Enemy/EM1016.EMD`, `EM1116.EMD` | the Tick (Chris / Jill model block) | **migrated, selected by Phase B** |
 | `Enemy/EM1017.EMD`, `EM1117.EMD` | Zombie Wesker | **migrated, selected by Phase B** |
+| `Enemy/EM1060.EMD`, `EM1061.EMD` (Chris), `EM1160.EMD`, `EM1161.EMD` (Jill) | the Saturn's two alternate outfits per character (disc `EM1030`/`EM1032`, `EM1031`/`EM1033`), **renamed** — the disc's names are the OG's and DC's own outfit files | **migrated (always)**; selected at model-table index 28 / 29 in genuine Saturn mode, never in a borrowed Battle run (`saturn/SaturnModels.h`). The room 11C wardrobe that sets them is Saturn **code**, not the RDT event: handler 9 is overridden (`GAME5 0x060490B8`, player yaw picks the mannequin, its own global messages 62-64) and the "yes" is post-action 10/4 (`0x0605CA84`). The port carries it as **data** instead: the migrator always writes `Stage1/ROOM11C0/1.RDT` and `Stage6/ROOM61C0/1.RDT` patched (`core/SaturnWardrobe.cpp`, reference `tools/saturn_wardrobe_rdt.py`, `check` compares the migrated files): area 4 → event 0 (outfit 2, flags 112+113), area 5 → new event 3 (outfit 1, flag 112), the Saturn's three texts as room messages 3-5, DC-style toggle back to the default. The yaw choice becomes an area choice. **Play-tested OK 2026-10-05**: both Saturn outfits and the change back |
+| `Stage1..7/ROOM*.RDT`, `RC*.pak` | every other campaign room and background | **migrated, optional** ("All rooms and backgrounds"); 141 of 348 rooms differ from the PC's by its script patches |
+| `Sound/<Bgm_xx>` | every campaign BGM, rendered from `BGM<group>.CDP` under the PC's file names | **migrated, optional** ("All room BGM"); no code change |
 | `Stage8/ROOM8010..80F0.RDT` | the 15 Battle Game arenas, decoded | **migrated**, and the first one is now loaded (Phase C.1) |
 | `Stage5/RC5130..5137.pak` | the Laboratory Tyrant room's backgrounds, re-drawn by the Saturn | **migrated, selected by Phase D** |
 | `Enemy/A_TRS1.DAT` (+`T`), `A_TRS2.DAT` (+`T`) | the two Tyrant capsules (lab, Underground) | **format decoded**; no PC asset yet |
 | `Enemy/A_PLT2/4.DAT`, `A_KKM1.DAT` (+`T`) | extra plants, kitchen machine (stage 3 room 12, arena 8) | **format decoded**; no PC asset yet |
-| `Sound/SAT_BATTLE`, `SAT_BATTLE_END`, `SAT_BATTLE_TYRANT`, `SAT_RANKING` | the Battle Game's music (`SND/BATTLE.CDP`, `BGM34B.CDP` song 2, `SND/NAME.CDP`), rendered from the sequences | **migrated**, routed by arena and at the end of a run |
-| other sound | the campaign's Saturn BGM/SE, `BATTLE.BIN`, Tick sounds | music format decoded (`SATURN_VERSION_ANALYSIS.md` §6a), not migrated |
+| `Sound/Bgm_58`, `Bgm_59`, `Bgm_24`, `Bgm_5a` | the Battle Game's music (`SND/BATTLE.CDP`, `BGM34B.CDP` song 2, `SND/NAME.CDP`), rendered from the sequences | **migrated**, routed by arena and at the end of a run |
+| other sound | the Saturn's SE banks, `BATTLE.BIN`'s unverified streams | music format decoded (`SATURN_VERSION_ANALYSIS.md` §6a); the SE banks are not migrated |
 | everything else | shared with PC/PS1 | falls back by design |
 
 A sparse overlay is a *supported* shape, not an accident: `SATURN` is listed in
@@ -453,19 +456,19 @@ open; the Battle Game's music is in (below).
   and its key-on registers match the running game's SCSP, but the rendered WAVs
   have not yet been listened to in a game session.
   - **Migrator:** the Saturn tab's "Battle Game music" renders
-    `SATURN/Sound/SAT_BATTLE` (`BATTLE.CDP` song 0, the arena loop),
-    `SAT_BATTLE_END` (song 1, the end-of-run fanfare), `SAT_BATTLE_TYRANT`
-    (`BGM34B.CDP` song 2, the arena 15 Tyrant loop) and `SAT_RANKING`
+    `SATURN/Sound/Bgm_58` (`BATTLE.CDP` song 0, the arena loop),
+    `Bgm_59` (song 1, the end-of-run fanfare), `Bgm_24`
+    (`BGM34B.CDP` song 2, the arena 15 Tyrant loop) and `Bgm_5a`
     (`NAME.CDP`, for the ranking screen once it exists), WAV or Ogg, with the
     loop region and marker the game's loader honours, plus
-    `Sound/PS1AUDIO.TXT` so the game mixes at 44.1 kHz in Saturn mode.
+    `Sound/AUDIO.TXT` so the game mixes at 44.1 kHz in Saturn mode.
   - **Game** (`SaturnBattle.cpp`, `SoundSystem.cpp`, `RoomInit.cpp`, all gated
     on `g_bSaturnMode && g_saturnBattleActive`): the arena's BGM group and
     room state come from GAME5's own tables (`0x0609ACCC`, `0x0609ACDC`) -
     before this the arenas folded onto stage 1 and played the **mansion's**
     room music. Group `0x40` names the two Saturn files; the rest rooms play
     the PC's group `0x0F`, arenas 5/8/10 groups `0x06`/`0x27`/`0x23`, arena 15
-    group `0x34` channel 2 (`SAT_BATTLE_TYRANT`, not the PC whole-file `Bgm_24`).
+    group `0x34` channel 2 (`Bgm_24`, not the PC whole-file `Bgm_24`).
     After the Tyrant, the fanfare plays
     once (`bgm_play_group_channel(0x40, 1)`, GAME5 `0x06088BDE`).
   - **Required in-game play-test:** migrate with the Saturn tab (music checked), run a Battle Game:
@@ -475,7 +478,7 @@ open; the Battle Game's music is in (below).
     `0x40` arenas are silent and the log says `FAILED TO LOAD`.
   - **First test (2026-09-29): no battle theme.** Two causes, both fixed. The
     overlay probe in `ResolveAssetRoot` tried only the literal `.wav`, so an
-    overlay holding just `SAT_BATTLE.ogg` fell through to the base tree, which
+    overlay holding just `Bgm_58.ogg` fell through to the base tree, which
     has neither file; it now also accepts the `.ogg` sibling. And the arena
     advance (`battle_advance_room`, no door) never called `update_room_bgm`, so
     the BGM only ever changed at the rest rooms' doors.
@@ -514,7 +517,7 @@ open; the Battle Game's music is in (below).
      TIM is loaded (`saturn_battle_tint_model_tim`), and the arena Tyrant has
      **700 HP**, starts out of the capsule, and cannot be parked by the room
      script (`saturn_tyrant_battle_init` / `_update`). Its music is the stock
-     `Bgm_24`: the `SAT_BATTLE_TYRANT` override is removed (the Saturn plays the
+     `Bgm_24`: the `Bgm_24` override is removed (the Saturn plays the
      stock theme; the override only made the arena silent when the file had not
      been migrated - the overlay predated the migrator entry).
   4. *End of run* - black background (standalone screen mode, room sprites
@@ -528,7 +531,7 @@ open; the Battle Game's music is in (below).
      from the inventory and box, equal to the Saturn's start-minus-shots
      counters because nothing in the run gains or drops ammo; the run clock
      stops at the Tyrant's clear (the Saturn advances it in the HUD draw, which
-     the end sequence does not run); `SAT_RANKING` starts with the ranking.
+     the end sequence does not run); `Bgm_5a` starts with the ranking.
 
 - **Third play-test (2026-09-30), implemented, needs a play-test.**
   1. *Wesker survives the magnum* - GAME5's zombie hit reaction exempts id 1 +
@@ -546,7 +549,7 @@ open; the Battle Game's music is in (below).
      **Approximations**: the life bar is solid yellow/red at the Saturn's place
      with a 2-px bob (its VDP1 sprites are not decoded); the save prompt is
      spelled in font B (`SAVE2.BIN` not ported); the name alphabet is font B's.
-  4. *Music* - `SAT_RANKING` starts with the score screen.
+  4. *Music* - `Bgm_5a` starts with the score screen.
 
 Still to do:
 
@@ -555,7 +558,7 @@ Still to do:
 2. The score/ranking screens' exact colours, the name-entry character set and
    the save prompt's wording are not read from `RANKING.PRG` yet.
 3. Other Saturn audio: the campaign BGM arrangement, SE banks, room PCM banks,
-   `BATTLE.BIN`'s four unverified streams. (The Tick's exclusive sounds: rendered from `SE308.CDP` as `SAT_TICK_*` and loaded over the Hunter's `He_*` slots 0-7, and slot 8 for the stab, in stage 2 by `saturn_tick_snd_name`. **The slot → song mapping is the bank's own table, not "song = slot"** (that first guess played a door-like thud for the footstep): `Snd_em(n)` looks up key `0x0800+n` in the 8-byte records at `SE308.CDP +0x800` (loaded to `0x002E8430`), song = id − 768, giving slots 0-8 → songs 9 10 5 8 6 3 4 7 16. Fixed 2026-10-04; re-run the Saturn tab or `re1am_selftest saturn … --no-models --no-rooms --no-bg --no-music` to regenerate; untested in game.)
+   `BATTLE.BIN`'s four unverified streams. (The Tick's exclusive sounds: rendered from `SE308.CDP` as `Tk_*` and loaded over the Hunter's `He_*` slots 0-7, and slot 8 for the stab, in stage 2 by `saturn_tick_snd_name`. **The slot → song mapping is the bank's own table, not "song = slot"** (that first guess played a door-like thud for the footstep): `Snd_em(n)` looks up key `0x0800+n` in the 8-byte records at `SE308.CDP +0x800` (loaded to `0x002E8430`), song = id − 768, giving slots 0-8 → songs 9 10 5 8 6 3 4 7 16. Fixed 2026-10-04; re-run the Saturn tab or `re1am_selftest saturn <image> <target>` to regenerate — the creatures, outfits, arenas, Tyrant room and Battle/Tick sound are always written now; untested in game.)
 4. The Saturn's own title-menu art (above).
 
 ### Phase D — the room props and the lab's second Tyrant

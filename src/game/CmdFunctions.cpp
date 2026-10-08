@@ -1753,8 +1753,16 @@ int cmd_state_word_set(void)
     // (so the stage-3 ROOM4110 flashing emergency light, the other script that
     // writes these two fields, is untouched), and only when the fade really is
     // parked at full black with its delta already zeroed.
-    if (byteOffset == 2 && value == 0 && g_bDcMode &&
-        room_file_stage() >= STAGE_ARRANGE_FIRST &&
+    //
+    // Saturn mode has the same script in the campaign's own wardrobe (stage 0
+    // room 0x1C, ROOM11C events 1/2: the Saturn's data is the PS1's), and the
+    // same cause: the Saturn blocks on the CD during the change, this port does
+    // not, so the room's masks showed under the message (bottom-left at camera 2).
+    // 4110 (the emergency light) is another room, so it stays out of reach.
+    const bool holdBlank =
+        (g_bDcMode && room_file_stage() >= STAGE_ARRANGE_FIRST) ||
+        (g_bSaturnMode && g_stageId == 0 && g_roomId == 0x1C);
+    if (byteOffset == 2 && value == 0 && holdBlank &&
         g_SpecialRoomLightDelta == 0 &&
         (short)g_SpecialRoomLightState >= 0x7F00) {
         return 1;

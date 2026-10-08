@@ -92,6 +92,11 @@ int saturn_battle_dc_outfit(void)
     return g_bSaturnMode && g_saturnBattleActive && s_battleDcOutfit;
 }
 
+int saturn_mode_is_borrowed(void)
+{
+    return s_savedGameMode >= 0;
+}
+
 static void battle_enter_saturn_mode(void)
 {
     if (g_GameMode == GAME_MODE_SATURN || s_savedGameMode >= 0) return;

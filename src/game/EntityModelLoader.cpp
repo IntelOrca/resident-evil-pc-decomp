@@ -28,6 +28,7 @@ extern BYTE  g_textureQueueData[40];           // 0x00d22740
 extern DWORD g_animSlotIndex;                  // 0x008f8c78
 extern DWORD g_textureBankRedirect[32];        // 0x00aae2b0
 extern DWORD g_bCostumeVariant;                     // 0x004d6444
+extern unsigned int Flg_ck(int baseAddr, unsigned int bitIndex);   // CmdFunctions.cpp
 
 // Player/weapon angle globals
 extern int g_weaponAngle_Special;              // 0x004c2028
@@ -121,8 +122,8 @@ static const char g_emdPathTable[106][17] = {
     "enemy/em102c.emd", // Rebecca, cutscene anim variant (texture identical to em1023)
     "enemy/em102d.emd", // Barry, cutscene anim variant (texture identical to em1022)
     "enemy/em102e.emd", // Wesker, cutscene anim variant (texture identical to em1024)
-    "enemy/em1030.emd", // Chris, alternative outfit 1
-    "enemy/em1032.emd", // Chris, alternative outfit 2
+    "enemy/em1030.emd", // Chris alternative outfit 1
+    "enemy/em1032.emd", // Chris alternative outfit 2 (PC exclusive)
 
     // Jill offset
     "enemy/char10.emd",
@@ -176,8 +177,8 @@ static const char g_emdPathTable[106][17] = {
     "enemy/em102c.emd",
     "enemy/em102d.emd",
     "enemy/em102e.emd",
-    "enemy/em1031.emd", // Jill (alternative outfit 1)
-    "enemy/em1033.emd", // Jill (alternative outfit 2)
+    "enemy/em1031.emd", // Jill alternative outfit 1 (Black tanktop)
+    "enemy/em1033.emd", // Jill alternative outfit 2 (Red tanktop) PC exclusive
 };
 
 // ============================================================================
@@ -481,6 +482,20 @@ void LoadEntityEMD(Entity* em, unsigned char entity_id)
     unsigned char bVar5 = g_TextureBankID;
     unsigned char bVar6 = g_TextureCurrentPage;
 
+    // Saturn: the outfit is the pair of scenario flags its wardrobe writes
+    // (the migrator's patched ROOM11C/61C scripts), not the PC's one-way costume bit (room_set raises
+    // that bit on every wardrobe visit). Derive the bit from flag 112 so changing
+    // back to the default outfit, and a loaded save, both come out right; flag 113
+    // then picks which outfit (saturn_emd_model_index). A borrowed Battle run keeps
+    // the save's.
+    if (g_bSaturnMode && !saturn_mode_is_borrowed() && entity_id < 2) {
+        if (Flg_ck((int)g_ScenarioFlags, SATURN_SCENARIO_FLAG_OUTFIT_1) != 0) {
+            g_main_state_flags2 |= MSF2_COSTUME_VARIANT;
+        } else {
+            g_main_state_flags2 &= ~MSF2_COSTUME_VARIANT;
+        }
+    }
+
     if ((g_main_state_flags2 & MSF2_COSTUME_VARIANT) != 0 && entity_id < 2) {
         entity_id = (unsigned char)g_bCostumeVariant + 0x33;
     }
@@ -537,6 +552,12 @@ void LoadEntityEMD(Entity* em, unsigned char entity_id)
     int data_pointer = (int)g_loadDataDestPointer;
 
     if ((g_main_state_flags2 & MSF2_COSTUME_VARIANT) != 0 && (unsigned int)g_bCostumeVariant - entity_id == -51) {
+        entity_id = g_playerEntity.id & 1;
+    }
+    // The Saturn's own outfits sit at their own model indices (saturn/SaturnModels.h);
+    // the same fold-back to the player model, for whatever reads entity_id below.
+    if (g_bSaturnMode && (g_main_state_flags2 & MSF2_COSTUME_VARIANT) != 0 &&
+        saturn_emd_is_outfit(entity_id)) {
         entity_id = g_playerEntity.id & 1;
     }
 
