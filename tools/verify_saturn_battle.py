@@ -646,7 +646,7 @@ def check_results_and_arenas_2(saturn_src):
         ('#define SAT_FONT_B_OFF        0x1630', 'font B offset'),
         ('#define SAT_BMP_OFF           0x10000', 'backdrop BMP offset'),
         ('return (int)((s_resultsFrame >> 2) & 2);', 'the white/yellow flicker'),
-        ('bgm_play_group_channel(SATURN_BGM_GROUP_RANKING, 0);', 'SAT_RANKING plays'),
+        ('bgm_play_group_channel(SATURN_BGM_GROUP_RANKING, 0);', 'Bgm_5a (ranking) plays'),
     ):
         check(needle in saturn_src, 'port: ' + label)
     body = re.search(r'void saturn_ranking_state\(void\)\s*\{(.*?)\n\}', saturn_src, re.S)
@@ -660,12 +660,12 @@ def check_results_and_arenas_2(saturn_src):
           b.find('battle_results_begin()') < b.find('battle_results_dead('),
           'the ranking music starts with the score screen')
     # saturn_ranking_state runs after saturn_battle_close_run() has cleared the
-    # run, so SAT_RANKING must resolve before the battle-active gate - behind it
+    # run, so Bgm_5a (ranking) must resolve before the battle-active gate - behind it
     # the results screens were silent.
     names = re.search(r'const char\* saturn_battle_bgm_name\([^)]*\)\s*\{(.*?)\n\}', saturn_src, re.S)
     nb = names.group(1) if names else ''
-    check(0 <= nb.find('"SAT_RANKING"') < nb.find('g_saturnBattleActive'),
-          'SAT_RANKING resolves without a run in progress')
+    check(0 <= nb.find('"Bgm_5a"') < nb.find('g_saturnBattleActive'),
+          'Bgm_5a (ranking) resolves without a run in progress')
     # PORT DECISION: a run with the debug features on is scored but never ranked.
     # battle_ranking_place() shifts the table as it places, so it must not be
     # reached at all.
@@ -1376,16 +1376,16 @@ def check_battle_music(saturn_src):
     music = open(os.path.join(REPO, 'tools', 'asset_migrator', 'src', 'core', 'SaturnMusic.h'),
                  encoding='utf-8', errors='replace').read()
     written = dict(((p, int(n)), name) for p, n, name in
-                   re.findall(r'\{"([A-Z0-9]+\.CDP)", (\d), "([A-Z_]+)"', music))
+                   re.findall(r'\{"([A-Z0-9]+\.CDP)", (\d), "([A-Za-z0-9_]+)"', music))
     check(names == [written.get(('BATTLE.CDP', 0)), written.get(('BATTLE.CDP', 1))],
           'the game\'s group 0x40 names %s are the migrator\'s BATTLE.CDP songs 0/1' % names)
-    check(written.get(('BGM34B.CDP', 2)) == 'SAT_BATTLE_TYRANT',
-          'the migrator exports BGM34B.CDP song 2 as the Tyrant loop')
+    check(written.get(('BGM34B.CDP', 2)) == 'Bgm_24',
+          "the migrator exports BGM34B.CDP song 2 under the PC's name Bgm_24 (mandatory set)")
     name_body = re.search(r'const char\* saturn_battle_bgm_name\([^)]*\)\s*\{(.*?)\n\}',
                           saturn_src, re.S)
     # The Saturn's arena 15 plays the STOCK Tyrant theme (user play-test,
     # 2026-09-30): group 0x34 must fall through to the PC's Bgm_24.
-    check(bool(name_body) and 'return "SAT_BATTLE_TYRANT"' not in name_body.group(1),
+    check(bool(name_body) and 'return "Bgm_24"' not in name_body.group(1),
           "arena 15 plays the campaign's own Tyrant theme (group 0x34, Bgm_24)")
     check(bool(name_body) and 'g_bSaturnMode' in name_body.group(1) and
           'g_saturnBattleActive' in name_body.group(1),

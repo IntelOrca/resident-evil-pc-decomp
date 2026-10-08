@@ -25,13 +25,15 @@ struct SaturnMusicEntry {
 };
 
 inline constexpr SaturnMusicEntry kSaturnMusic[] = {
-    {"BATTLE.CDP", 0, "SAT_BATTLE",
+    {"BATTLE.CDP", 0, "Bgm_58",
      "Battle Game arenas (group 0x40 channel 0, 25.3 s loop)"},
-    {"BATTLE.CDP", 1, "SAT_BATTLE_END",
+    {"BATTLE.CDP", 1, "Bgm_59",
      "Battle Game end-of-run fanfare (group 0x40 channel 1, GAME5 0x06088C10)"},
-    {"BGM34B.CDP", 2, "SAT_BATTLE_TYRANT",
-     "Battle Game arena 15 Tyrant theme (group 0x34 channel 2, 43.5 s loop)"},
-    {"NAME.CDP", 0, "SAT_RANKING", "Battle Game ranking / name entry (RANKING.PRG)"},
+    // The campaign's Tyrant theme under the PC's own name: arena 15 and the lab
+    // both play it, so it is part of the mandatory set (allBgm skips it).
+    {"BGM34B.CDP", 2, "Bgm_24",
+     "Tyrant battle (group 0x34 channel 2, 43.5 s loop; Battle Game arena 15 + lab)"},
+    {"NAME.CDP", 0, "Bgm_5a", "Battle Game ranking / name entry (RANKING.PRG)"},
 };
 
 // The Tick's exclusive sound effects. The Saturn's room SE banks (/SND/SE<stage>
@@ -64,26 +66,30 @@ struct SaturnSfxEntry {
 };
 
 inline constexpr SaturnSfxEntry kSaturnTickSfx[] = {
-    {"SE308.CDP", 9, "SAT_TICK_WALKA", "footstep A (slot 0 = id 777, Hunter He_walkA)"},
-    {"SE308.CDP", 10, "SAT_TICK_WALKB", "footstep B (slot 1 = id 778, Hunter He_walkB)"},
-    {"SE308.CDP", 5, "SAT_TICK_JUMP", "jump (slot 2 = id 773, Hunter He_jump)"},
-    {"SE308.CDP", 8, "SAT_TICK_ATT", "attack (slot 3 = id 776, Hunter He_att)"},
-    {"SE308.CDP", 6, "SAT_TICK_LAND", "landing (slot 4 = id 774, Hunter He_land)"},
-    {"SE308.CDP", 3, "SAT_TICK_SMASH", "smash (slot 5 = id 771, Hunter He_smash)"},
-    {"SE308.CDP", 4, "SAT_TICK_DAM", "damage (slot 6 = id 772, Hunter He_dam)"},
-    {"SE308.CDP", 7, "SAT_TICK_NOUT", "death (slot 7 = id 775, Hunter He_Nout)"},
-    {"SE308.CDP", 16, "SAT_TICK_STUCK", "arm strikes the floor (slot 8 = id 784, the stab)"},
+    {"SE308.CDP", 9, "Tk_walkA", "footstep A (slot 0 = id 777, Hunter He_walkA)"},
+    {"SE308.CDP", 10, "Tk_walkB", "footstep B (slot 1 = id 778, Hunter He_walkB)"},
+    {"SE308.CDP", 5, "Tk_jump", "jump (slot 2 = id 773, Hunter He_jump)"},
+    {"SE308.CDP", 8, "Tk_att", "attack (slot 3 = id 776, Hunter He_att)"},
+    {"SE308.CDP", 6, "Tk_land", "landing (slot 4 = id 774, Hunter He_land)"},
+    {"SE308.CDP", 3, "Tk_smash", "smash (slot 5 = id 771, Hunter He_smash)"},
+    {"SE308.CDP", 4, "Tk_dam", "damage (slot 6 = id 772, Hunter He_dam)"},
+    {"SE308.CDP", 7, "Tk_Nout", "death (slot 7 = id 775, Hunter He_Nout)"},
+    {"SE308.CDP", 16, "Tk_stuck", "arm strikes the floor (slot 8 = id 784, the stab)"},
 };
 
 struct SaturnMusicOptions {
     bool music = true;      // kSaturnMusic
     bool tickSfx = true;    // kSaturnTickSfx
+    // Every campaign BGM the PC names (core/SaturnBgmTable.h), rendered from the
+    // Saturn's own BGM<group>.CDP under the PC's file name, so Saturn mode plays
+    // the Saturn's arrangement in every room. Optional: ~50 renders.
+    bool allBgm = false;
     AudioFormat format = AudioFormat::Wav;
     int oggQuality = 6;
     std::string ffmpegPath = "ffmpeg";
 };
 
-// Renders kSaturnMusic (and kSaturnTickSfx) into <overlay>/Sound and writes Sound/PS1AUDIO.TXT
+// Renders kSaturnMusic (and kSaturnTickSfx) into <overlay>/Sound and writes Sound/AUDIO.TXT
 // there, whose presence makes the game mix at 44.1 kHz (the Saturn renders
 // are 44.1 kHz; the PC's 22.05 kHz mix would halve them). `written` receives
 // overlay-relative paths.

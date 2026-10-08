@@ -614,7 +614,7 @@ void InitializeSoundSystem(void)
         // gave the PS1 audio (37.8 / 44.1 kHz) mixes at 44.1 kHz instead, or
         // the extra bandwidth would be thrown away.
         hr = g_pXAudio2->CreateMasteringVoice(&g_pMasterVoice, 2,
-                                              AudioFile_TreeHasPs1Audio() ? 44100 : 22050,
+                                              AudioFile_TreeHasCDAudio() ? 44100 : 22050,
                                               0, NULL, NULL);
         if (FAILED(hr)) {
             sprintf(dbg, "[XA2] CreateMasteringVoice failed: 0x%08X\n", hr);

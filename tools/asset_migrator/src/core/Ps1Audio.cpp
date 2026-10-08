@@ -47,7 +47,7 @@ const int kXaChannels = 16;
 // already uses, replacing the PC file: a WAV overwrites it, an OGG replaces it
 // (the .wav is deleted once the .ogg is written, since the game prefers the
 // .ogg anyway and two copies would only waste space). Records every file for
-// Sound/PS1AUDIO.TXT.
+// Sound/AUDIO.TXT.
 class Writer {
 public:
     Writer(const std::string& tree, const Ps1AudioOptions& o) : m_tree(tree), m_opts(o) {
@@ -465,7 +465,7 @@ int removePs1Audio(const std::string& treeRoot, const Progress& progress) {
     if (soundDir.empty()) return 0;
     std::string listPath;
     for (const auto& e : listDirectory(soundDir))
-        if (toUpper(e) == ps1AudioListName()) listPath = joinPath(soundDir, e);
+        if (toUpper(e) == ps1AudioListName() || toUpper(e) == "AUDIO.TXT") listPath = joinPath(soundDir, e);
     std::vector<uint8_t> data;
     if (listPath.empty() || !readFile(listPath, &data)) return 0;
     std::istringstream in(std::string(data.begin(), data.end()));

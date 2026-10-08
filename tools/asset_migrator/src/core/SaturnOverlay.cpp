@@ -32,7 +32,7 @@
 //                                  (NEW GAME / LOAD GAME / EXTRA). Not on the
 //                                  disc - the Saturn menu uses another font -
 //                                  so core/TitleFont.cpp carries the glyphs
-//   Sound/SAT_BATTLE, SAT_BATTLE_END, SAT_RANKING
+//   Sound/Bgm_58, Bgm_59 (battle), Bgm_5a (ranking), Bgm_24
 //                                  the Battle Game's own music, rendered from
 //                                  SND/BATTLE.CDP and SND/NAME.CDP through the
 //                                  Sega sound driver + SCSP model

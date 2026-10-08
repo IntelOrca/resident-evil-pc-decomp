@@ -48,7 +48,7 @@ OG mode (`[Game] Ps1EndingCredits=1`):
 - **PS1 audio** replaces the tree's sound effects, voices and BGM in
   `Sound/` and `Voice/` with the disc's, under the tree's own file names.
   Every name the PS1 has no counterpart for keeps the tree's file. Everything
-  written is listed in `Sound/PS1AUDIO.TXT`; that file is also what makes the
+  written is listed in `Sound/AUDIO.TXT`; that file is also what makes the
   game mix at 44.1 kHz instead of 22.05. No config key: the files are the
   switch. **Running the PC migration again (with a PC source) restores the PC
   release's sounds**: it deletes the listed files first, then copies the
@@ -128,6 +128,11 @@ Builds the `SATURN/` overlay from a Resident Evil **Sega Saturn** disc image
 the Saturn release adds is written; everything else falls back to the base
 tree, which is never written to.
 
+Everything below up to "Optional" is **always migrated** - the port's Saturn mode
+needs all of it, so there is no switch. The tab offers exactly two optional
+migrations (all rooms and backgrounds; all campaign BGM) and the audio format and
+quality, which apply to every rendered sound.
+
 - **Saturn-only creatures** -> `SATURN/Enemy/`: `EM1016`/`EM1116` (the Tick,
   Chris's / Jill's model-table block) and `EM1017`/`EM1117` (Zombie Wesker),
   converted to PC `.EMD`s by `core/SaturnEmd.cpp`, a port of
@@ -135,6 +140,14 @@ tree, which is never written to.
   animations are the PS1 data every Saturn EMD carries (the Hunter's / the
   zombie's). The textures take 4-5 pages, which the game reads through
   `PSXObject_SetTexHeight` (these models only).
+- **Saturn alternate outfits** -> `SATURN/Enemy/`: the disc's `EM1030`/`EM1032`
+  (Chris) and `EM1031`/`EM1033` (Jill), written as `EM1060`/`EM1061` and
+  `EM1160`/`EM1161`. The Saturn gives its outfits the very names the PC and the
+  Director's Cut give theirs (those files are different models), so they are
+  **renamed** and the port picks them by model-table index - Chris/Jill block
+  slots 28 and 29 - never by name, which is what keeps them from shadowing the OG
+  and DC outfits. The player models carry 23 meshes against the PS1 skeleton's 15
+  joints; the converter takes the 15 the skeleton reaches.
 - **Battle Game arenas** -> `SATURN/Stage8/`: the 15 `STAGE8/ROOM80x0.RDT`,
   LZ77-decoded (`core/SaturnLz77.cpp`) into ordinary PS1 RDTs, with the PS1
   colour-key -> PC index-0 transparency relabel. The arenas reuse campaign
@@ -154,6 +167,15 @@ tree, which is never written to.
   the written `ROOM5130.RDT` with `object_models[0]` pointed at it.
   Only rooms the Saturn actually re-cut are copied; the other 107 differing
   background frames are other rooms' re-dresses and stay on the base tree.
+- **Wardrobe** -> `SATURN/Stage1/ROOM11C0.RDT`, `ROOM11C1.RDT` and
+  `SATURN/Stage6/ROOM61C0.RDT`, `ROOM61C1.RDT`: the Saturn's rooms, decoded,
+  relabelled and **patched** (`core/SaturnWardrobe.cpp`). On the Saturn the two
+  extra outfits are offered by GAME5 code, not by the room script; the patch
+  writes that as SCD (area 4 -> event 0, outfit 2; area 5 -> a new event 3,
+  outfit 1; the Saturn's three questions as room messages 3-5), so the port needs
+  no wardrobe code. The new message and event tables go in at the VAB body and
+  every later offset moves. `re1am_selftest satwardrobe IN OUT` runs the patch
+  alone; `tools/saturn_wardrobe_rdt.py` is the byte-identical reference.
 - **Title menu font** -> `SATURN/Data/TITLEFNT.BIN` (2,953 bytes): the PC/PS1
   option typeface, A-Z, for the port's Saturn title menu (NEW GAME / LOAD GAME /
   EXTRA), so the Saturn build keeps the original Resident Evil look instead of the
@@ -162,19 +184,43 @@ tree, which is never written to.
   `tools/gen_title_font.py`: 17 letters cut from the Director's Cut's option cells
   and nine drawn by hand). `re1am_selftest titlefont OUT.BIN` writes the same file
   without a disc. Without it the port keeps its old Saturn title rows.
-- **Battle Game music** -> `SATURN/Sound/`: `SAT_BATTLE` (the arena loop,
-  `SND/BATTLE.CDP` song 0), `SAT_BATTLE_END` (the end-of-run fanfare, song 1),
-  `SAT_BATTLE_TYRANT` (`BGM34B.CDP` song 2, arena 15), and `SAT_RANKING`
+- **Battle Game music** -> `SATURN/Sound/`: `Bgm_58` (the arena loop,
+  `SND/BATTLE.CDP` song 0), `Bgm_59` (the end-of-run fanfare, song 1),
+  `Bgm_24` (`BGM34B.CDP` song 2, arena 15), and `Bgm_5a`
   (`SND/NAME.CDP`, the ranking screen), WAV or Ogg Vorbis (ffmpeg with
   `libvorbis`), levelled to the PC BGM's median RMS. The Saturn's
   music is sequenced: `core/SaturnSound.cpp` plays it through a model of
   Sega's sound driver (the sequencer, key-on and pitch tables read out of the
   disc's own `SND/SDDRVS.PCK`) and of the SCSP, reverb included (MAME's
   `scsp.cpp`/`scspdsp.cpp` behaviour; see `THIRD_PARTY_NOTICES.txt`). Loop regions and the marker go in as
-  for the PS1 audio (`core/AudioWriter.cpp`), and `Sound/PS1AUDIO.TXT` makes
+  for the PS1 audio (`core/AudioWriter.cpp`), and `Sound/AUDIO.TXT` makes
   the game mix at 44.1 kHz. The other arenas reuse campaign music the base
   tree already has. Format and checks: `docs/SATURN_VERSION_ANALYSIS.md` §6a.
+- **Tick sound effects** -> `SATURN/Sound/Tk_*` (`SND/SE308.CDP`).
 - `SATURN/SATURN.TXT` lists what was written.
+
+Optional (off by default):
+
+- **All rooms and backgrounds** -> `SATURN/Stage1..7/`: every
+  `STAGEn/ROOMsRRv.RDT` LZ77-decoded (no relabel: the shared rooms decode to the
+  PC's own bytes) and every `ROOMsRR.BSS` converted to `RC*.pak`, once for both
+  character variants. 346 room files and 639 backgrounds, ~450 MB, about 90 s;
+  the Laboratory Tyrant room and the wardrobe keep their patched copies, and the scrapped heliport's
+  placeholder `ROOM311.BSS` (not a container) is skipped and logged. With it
+  Saturn mode runs the Saturn's room data and its (slightly dimmer, sometimes
+  re-drawn) art everywhere. The decoded rooms get the same PS1 colour-key ->
+  index-0 transparency relabel as the arenas (3.2 M texels). **141 of the 348
+  rooms are not byte-identical to the PC's own `.RDT`** (84 at the same size,
+  mostly by 1-2 script bytes such as `255 -> 8`; 57 by a few dozen to a few
+  hundred bytes of length): the PC release patched their scripts, and this option
+  reverts those rooms to the Saturn's unpatched data. (Measured against
+  `assets/USA`; Capcom's own PC relabel agrees with ours in 93 TIM blocks, leaves
+  60 that ours moves, and the rest of the differences are the script patches.)
+- **All room BGM** -> `SATURN/Sound/<PC name>`: every `Bgm_*` the game's
+  `g_BgmNameTable` names, rendered from `SND/BGM<group>.CDP` (the Saturn's pack
+  is the PC's BGM group, song *k* its channel *k*; `core/SaturnBgmTable.h`,
+  generated by `tools/gen_saturn_bgm_table.py`). Needs no code change: the game
+  asks for the PC's names and the overlay answers first.
 
 Diagnostics: `re1am_selftest satsong <SDDRVS.PCK> <music.CDP> <song|all>
 <out.wav|outdir> [--dry]` renders any song of any Saturn music pack
@@ -186,8 +232,8 @@ a song's key-on register images for comparison with a live SCSP dump, and
 WAV/Ogg files intact; CTest runs this with the synthetic CD_PACK/tone/sequence
 parser tests.
 
-Not migrated yet (logged): the rest of the Saturn audio (its campaign BGM
-arrangement and SE banks, the `.PCK` room PCM, the unclassified `X68 SSCONV`
+Not migrated yet (logged): the rest of the Saturn audio (its SE banks, the
+`.PCK` room PCM, the unclassified `X68 SSCONV`
 banks), `MOVIE.CPK`, the `BM60` title/ending art and the
 `ENEMY/A_*.DAT` room props (the extra lab Tyrant capsule's own billboard - the
 fight and the room's art are ported, the capsule model is not). The Battle Game
@@ -265,7 +311,8 @@ re1am_selftest dc <image> <target> <USA|JPN> [--no-bg] [--no-movies]
 re1am_selftest ps1audio <image> <tree> [--no-sfx] [--no-voices] [--no-bgm]
                [--ogg] [--ogg-q N] [--ffmpeg <path>]
 re1am_selftest bgm <image> <BGM name> <out.wav>
-re1am_selftest saturn <image> <target> [--no-models] [--no-rooms] [--no-verify]
+re1am_selftest saturn <image> <target> [--all-rooms] [--all-bgm] [--ogg]
+               [--ogg-q N] [--ffmpeg <path>] [--no-verify]
 re1am_selftest satemd <saturn.EMD> <out.EMD>
 ```
 
@@ -298,9 +345,11 @@ The C++ decoders were checked against the Python tools:
   sample-aligned.
 - The Saturn EMD converter (`satemd`) against `tools/saturn_emd.py pc`:
   **byte-identical for all 46 Saturn EMDs the converter accepts**; the other
-  25 (the players and a few bosses/NPCs, whose joint ids are not a plain
-  0..N-1 run) are rejected by both the same way. The Tick and Zombie Wesker
-  output is the file play-tested in the game (2026-09-28).
+  25 (the players and a few bosses/NPCs) are rejected by the Python tool. The
+  C++ converter now also takes the player models (the four alternate outfits),
+  whose unreached extra meshes the Python tool does not skip, so those four have
+  no Python reference. The Tick and Zombie Wesker output is the file play-tested
+  in the game (2026-09-28).
 - The Saturn arenas (`saturn`) against `tools/saturn_room.py rdt`: same
   length, and the only differing bytes are the transparency relabel's TIM
   indices (65,062 texels over 6 rooms).

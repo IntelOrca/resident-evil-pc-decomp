@@ -45,7 +45,7 @@ struct PcMigrationOptions {
     // Replace the tree's sound effects, voices and BGM with the disc's (the
     // files in <tree>/Sound and <tree>/Voice, under the PC's names). Every
     // name the PS1 cannot supply keeps the tree's file; everything replaced is
-    // listed in Sound/PS1AUDIO.TXT. A later run with a PC source restores the
+    // listed in Sound/AUDIO.TXT. A later run with a PC source restores the
     // PC files. Off by default.
     bool ps1Audio = false;
     bool ps1AudioSfx = true;
@@ -85,27 +85,34 @@ struct SaturnMigrationOptions {
     std::string imagePath;
     // Game folder the SATURN/ overlay is written under.
     std::string targetRoot;
-    // Convert the Saturn-only creature models (EM1016/EM1116 = the Tick,
-    // EM1017/EM1117 = Zombie Wesker) into PC .EMDs in SATURN/Enemy.
-    bool convertModels = true;
-    // Decode the 15 Battle Game arena rooms (STAGE8/ROOM80x0.RDT, LZ77) into
-    // SATURN/Stage8, with the PS1 colour-key -> PC index-0 relabel.
-    bool arenaRooms = true;
-    // Convert the room backgrounds the Saturn re-drew into SATURN/Stage<n> as
-    // PC paks. Today that is the Laboratory Tyrant room (STAGE5/ROOM513.BSS ->
-    // RC5130..RC5137.pak), whose art the Saturn replaces on all eight cameras
-    // and where Chris' second Tyrant comes out of the second capsule.
-    bool roomBackgrounds = true;
-    // Write the PC/PS1 option typeface as SATURN/Data/TITLEFNT.BIN, which the
-    // port's Saturn title menu draws NEW GAME / LOAD GAME / EXTRA with
-    // (core/TitleFont.h). Carried by the tool, not read from the disc.
+    // What the Saturn adds is always migrated - there is no switch for it, because
+    // the port's Saturn mode needs all of it:
+    //   - the Saturn-only creatures (EM1016/EM1116 = the Tick, EM1017/EM1117 =
+    //     Zombie Wesker) and the Saturn-only alternate outfits (EM1030..EM1033,
+    //     written as EM1060/1061/1160/1161), as PC .EMDs in SATURN/Enemy;
+    //   - the 15 Battle Game arena rooms (STAGE8/ROOM80x0.RDT, LZ77) in
+    //     SATURN/Stage8, with the PS1 colour-key -> PC index-0 relabel;
+    //   - the Laboratory Tyrant room (STAGE5/ROOM513): its room file, its eight
+    //     re-drawn backgrounds (RC5130..RC5137.pak) and OB80, the cover over the
+    //     second capsule Chris' second Tyrant comes out of;
+    //   - the title menu typeface (SATURN/Data/TITLEFNT.BIN, core/TitleFont.h;
+    //     carried by the tool, not read from the disc), the Battle Game's results
+    //     screens, and its exclusive sound: the arena / end-of-run / Tyrant /
+    //     ranking music and the Tick's sound effects (core/SaturnMusic.cpp).
+    //
+    // Optional: every other room of the campaign. The Saturn's 348 shared RDTs
+    // decode byte-identical to the PS1's (most also to the PC's), so this is a
+    // choice about which game's data Saturn mode runs, and it is big.
+    //   allRooms: every STAGE1..7 ROOM*.RDT decoded into SATURN/Stage<n>, and every
+    //   ROOM*.BSS background as RC*.pak (core/SaturnBss).
+    bool allRooms = false;
+    //   allBgm: every campaign BGM the PC names (g_BgmNameTable), rendered from the
+    //   Saturn's BGM<group>.CDP sequences into SATURN/Sound under the PC's own
+    //   file names (core/SaturnBgmTable.h).
+    bool allBgm = false;
+    // Write the PC/PS1 option typeface as SATURN/Data/TITLEFNT.BIN.
     bool titleFont = true;
-    // Render the Battle Game's own music (SND/BATTLE.CDP, SND/NAME.CDP) from
-    // its sequences into SATURN/Sound (core/SaturnMusic.cpp).
-    bool battleMusic = true;
-    // Render the Tick's exclusive sound effects (SND/SE308.CDP, the songs its slot table names) into
-    // SATURN/Sound as SAT_TICK_*, mono (core/SaturnMusic.cpp).
-    bool tickSfx = true;
+    // Audio format and quality, for every rendered sound.
     AudioFormat musicFormat = AudioFormat::Wav;
     int oggQuality = 6;             // libvorbis -q:a when musicFormat is Ogg
     std::string ffmpegPath = "ffmpeg";

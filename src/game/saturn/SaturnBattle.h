@@ -196,9 +196,9 @@ int saturn_battle_asset_room(unsigned char* stage, unsigned char* room);
 // stage 8, and folding it onto stage 1 (get_stage_id) played the MANSION's room
 // music in the arenas.
 #define SATURN_BGM_GROUP_BATTLE 0x40
-// Port-only group id for RANKING.PRG's /SND/NAME.CDP (SAT_RANKING). The Saturn
-// loads that pack by name in its own module; the port needs a group to hand to
-// bgm_play_group_channel().
+// Port-only group id for RANKING.PRG's /SND/NAME.CDP (Bgm_5a - Battle game ranking).
+// The Saturn loads that pack by name in its own module; the port needs a group to 
+// hand to bgm_play_group_channel().
 #define SATURN_BGM_GROUP_RANKING 0x41
 
 // True once the run's end sequence is over; game_loop returns then and

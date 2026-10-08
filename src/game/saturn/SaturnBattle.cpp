@@ -261,7 +261,7 @@ unsigned char* saturn_battle_bgm_states(void)
 // pack (BGM34B's song 2 is the PC's Bgm_24: 43.5 s, the loop from 33.2 s). Song
 // 0 loops (its 0x82 loop point); song 1 has none, and the Saturn plays it once
 // at the end of the run. The asset migrator writes them as SATURN/Sound/
-// SAT_BATTLE and SAT_BATTLE_END (tools/asset_migrator core/SaturnMusic.h).
+// Bgm_58 (battle game bgm) and Bgm_59 (battle game finished) (tools/asset_migrator core/SaturnMusic.h).
 const char* saturn_battle_bgm_name(unsigned char group, int ch, signed char* loop)
 {
     if (!g_bSaturnMode || ch < 0 || ch >= 3) return NULL;
@@ -272,18 +272,18 @@ const char* saturn_battle_bgm_name(unsigned char group, int ch, signed char* loo
     if (group == SATURN_BGM_GROUP_RANKING) {
         if (ch != 0) return NULL;
         if (loop != NULL) *loop = 1;
-        return "SAT_RANKING";
+        return "Bgm_5a";
     }
     if (!g_saturnBattleActive) return NULL;
     if (group == SATURN_BGM_GROUP_BATTLE) {
-        static const char* const kNames[3] = { "SAT_BATTLE", "SAT_BATTLE_END", NULL };
+        static const char* const kNames[3] = { "Bgm_58", "Bgm_59", NULL };
         static const signed char kLoops[3] = { 1, 0, 0 };
         if (loop != NULL) *loop = kLoops[ch];
         return kNames[ch];
     }
     // Arena 15's group 0x34 is the campaign's own: channel 2 is the PC's Bgm_24,
     // the Tyrant battle, as it is in the lab. (An override to BGM34B.CDP's song
-    // 2, SAT_BATTLE_TYRANT, was tried; the Saturn's Tyrant theme is the stock
+    // 2, once exported under a Saturn-only name, was tried; the Saturn's Tyrant theme is the stock
     // one, and the override only made the arena silent when that file had not
     // been migrated.)
     return NULL;

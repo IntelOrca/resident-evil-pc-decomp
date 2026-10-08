@@ -169,8 +169,12 @@ bool parse(const std::vector<uint8_t>& data, Model* m, std::string* error) {
             return false;
         }
     if (!walk(*m, root, 0, error)) return false;
-    if ((int)m->jointOf.size() != (int)nobj) {
-        if (error) *error = "Saturn EMD: skeleton does not cover every mesh";
+    // The creatures' skeletons cover every mesh. The player models (CHAR1x and
+    // the EM103x outfits) carry extra meshes the OBJECT tree never reaches - 23
+    // meshes against the PS1 skeleton's 15 joints - so only the reached ones are
+    // converted; the joint ids must still be 0..N-1 (checked in the convert).
+    if (m->jointOf.empty() || m->jointOf.size() > nobj) {
+        if (error) *error = "Saturn EMD: skeleton does not cover any mesh";
         return false;
     }
     return true;
@@ -202,9 +206,14 @@ bool convertSaturnEmd(const std::vector<uint8_t>& saturn,
     }
 
     // --- pack the used textures into 256x256 pages (pack_pages) ---
+    // Only the meshes the skeleton reaches are converted; the others' textures
+    // must not take page space.
+    std::vector<const Part*> reached;
+    for (size_t i = 0; i < m.parts.size(); ++i)
+        if (m.jointOf.count((int)i)) reached.push_back(&m.parts[i]);
     std::set<int> usedSet;
-    for (const Part& p : m.parts)
-        for (const Poly& q : p.polys) usedSet.insert(q.tex);
+    for (const Part* p : reached)
+        for (const Poly& q : p->polys) usedSet.insert(q.tex);
     std::vector<int> used(usedSet.begin(), usedSet.end());
     std::stable_sort(used.begin(), used.end(), [&](int a, int b) {
         const Texture &A = m.textures[a], &B = m.textures[b];
@@ -245,8 +254,8 @@ bool convertSaturnEmd(const std::vector<uint8_t>& saturn,
     const int H = npages == 1 ? kPage : (usedRows + 15) / 16 * 16;
     std::vector<uint8_t> img((size_t)kPage * H, 0);
     std::map<int, std::pair<int, int>> tpal;  // tex -> (pal, atrb), first user
-    for (const Part& p : m.parts)
-        for (const Poly& q : p.polys)
+    for (const Part* p : reached)
+        for (const Poly& q : p->polys)
             if (!tpal.count(q.tex)) tpal[q.tex] = {q.pal, q.atrb};
     for (const auto& kv : place) {
         const int t = kv.first;
@@ -285,7 +294,7 @@ bool convertSaturnEmd(const std::vector<uint8_t>& saturn,
         uint32_t nv = 0, nn = 0, np = 0;
     };
     std::vector<Obj> objs;
-    for (int j = 0; j < (int)m.parts.size(); ++j) {
+    for (int j = 0; j < (int)m.jointOf.size(); ++j) {
         if (!partOfJoint.count(j)) {
             if (error) *error = "Saturn EMD: joint ids are not 0..N-1";
             return false;
@@ -345,17 +354,77 @@ bool convertSaturnEmd(const std::vector<uint8_t>& saturn,
         }
         objs.push_back(std::move(o));
     }
-    const uint32_t table = 12 + 28 * (uint32_t)objs.size();
-    std::vector<uint8_t> body, entries;
-    for (const Obj& o : objs) {
-        const uint32_t vt = table - 12 + (uint32_t)body.size();
-        body.insert(body.end(), o.verts.begin(), o.verts.end());
-        const uint32_t nt = table - 12 + (uint32_t)body.size();
-        body.insert(body.end(), o.norms.begin(), o.norms.end());
-        const uint32_t pt = table - 12 + (uint32_t)body.size();
-        body.insert(body.end(), o.prims.begin(), o.prims.end());
-        for (uint32_t w : {vt, o.nv, nt, o.nn, pt, o.np, 0u}) put32(entries, w);
+    // The PS1 section's own TMD can have more objects than the Saturn skeleton has
+    // joints: the player models have 16 (CHAR10: 15 body joints + an 8-vertex,
+    // 12-primitive box as object 15) against the Saturn's 15. The engine sizes
+    // the joint array from the TMD and the animation data from the PS1 skeleton,
+    // so a 15-object TMD leaves joint 15 reading past its slots (crash in
+    // FindMinClutDepth). Keep the extra object's vertices and normals and drop its
+    // primitives: it stays in the table and draws nothing.
+    {
+        uint32_t d3 = 0;
+        if (m.ps1.size() >= 20) d3 = le32(m.ps1, m.ps1.size() - 20 + 12);
+        if (d3 + 12 <= m.ps1.size()) {
+            const uint32_t psObjs = le32(m.ps1, d3 + 8);
+            for (uint32_t k = (uint32_t)objs.size(); k < psObjs && k < 64; ++k) {
+                const size_t e = d3 + 12 + 28 * (size_t)k;
+                if (e + 28 > m.ps1.size()) break;
+                const uint32_t vt = le32(m.ps1, e), nv = le32(m.ps1, e + 4);
+                const uint32_t nt = le32(m.ps1, e + 8), nn = le32(m.ps1, e + 12);
+                const size_t base = d3 + 12;
+                if (base + vt + 8 * (size_t)nv > m.ps1.size() ||
+                    base + nt + 8 * (size_t)nn > m.ps1.size())
+                    break;
+                Obj o;
+                o.verts.assign(m.ps1.begin() + base + vt, m.ps1.begin() + base + vt + 8 * nv);
+                o.norms.assign(m.ps1.begin() + base + nt, m.ps1.begin() + base + nt + 8 * nn);
+                o.nv = nv;
+                o.nn = nn;
+                // PSXObject::Store refuses an object with no primitives (its kind
+                // enumeration returns 0), so the placeholder carries one degenerate
+                // triangle - all three corners on vertex 0 - of the one kind the
+                // other objects use. It rasterises to nothing.
+                if (nv > 0 && nn > 0) {
+                    put32(o.prims, 0x34000609);
+                    for (int c = 0; c < 3; ++c) {
+                        o.prims.push_back(0);
+                        o.prims.push_back(0);
+                        put16(o.prims, c == 0 ? 0x7800 : c == 1 ? 0x0080 : 0);
+                    }
+                    for (int c = 0; c < 6; ++c) put16(o.prims, 0);
+                    o.np = 1;
+                }
+                objs.push_back(std::move(o));
+            }
+        }
     }
+    const uint32_t table = 12 + 28 * (uint32_t)objs.size();
+    // Body layout = the stock EMDs': ALL primitives (objects in order), then all
+    // vertices, then all normals. It is not cosmetic. SetupEntityJointAnimation
+    // (the room mirror's second copy of an entity) copies the object table from
+    // entry 0 up to the address its first word - object 0's VERTEX pointer -
+    // holds, and relocates every entry's primitive pointer into that copy. In the
+    // stock layout that span is the table plus every primitive; with the
+    // per-object (verts, norms, prims) interleave this converter used to write it
+    // was the table alone, so the mirror's primitives pointed past the copy and
+    // the entity left no reflection.
+    std::vector<uint8_t> body, entries;
+    std::vector<uint32_t> ptOf(objs.size()), vtOf(objs.size()), ntOf(objs.size());
+    for (size_t k = 0; k < objs.size(); ++k) {
+        ptOf[k] = table - 12 + (uint32_t)body.size();
+        body.insert(body.end(), objs[k].prims.begin(), objs[k].prims.end());
+    }
+    for (size_t k = 0; k < objs.size(); ++k) {
+        vtOf[k] = table - 12 + (uint32_t)body.size();
+        body.insert(body.end(), objs[k].verts.begin(), objs[k].verts.end());
+    }
+    for (size_t k = 0; k < objs.size(); ++k) {
+        ntOf[k] = table - 12 + (uint32_t)body.size();
+        body.insert(body.end(), objs[k].norms.begin(), objs[k].norms.end());
+    }
+    for (size_t k = 0; k < objs.size(); ++k)
+        for (uint32_t w : {vtOf[k], objs[k].nv, ntOf[k], objs[k].nn, ptOf[k], objs[k].np, 0u})
+            put32(entries, w);
     std::vector<uint8_t> tmd;
     put32(tmd, table + (uint32_t)body.size());
     put32(tmd, 0);

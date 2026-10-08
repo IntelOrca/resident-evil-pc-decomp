@@ -400,7 +400,7 @@ void InitializeSoundSystem(void)
         return;
     }
 
-    s_outRate = AudioFile_TreeHasPs1Audio() ? 44100 : 22050;
+    s_outRate = AudioFile_TreeHasCDAudio() ? 44100 : 22050;
 
     SDL_AudioSpec want = {};
     want.freq     = OUT_RATE;

@@ -17,11 +17,13 @@
 //   re1am_selftest ps1audio <image> <tree> [--no-sfx] [--no-voices] [--no-bgm]
 //                     [--ogg] [--ogg-q N] [--ffmpeg <path>]
 //   re1am_selftest bgm <image> <BGM name> <out.wav>
-//   re1am_selftest saturn <image> <target> [--no-models] [--no-rooms]
-//                     [--no-bg] [--no-music] [--ogg] [--ffmpeg <path>]
-//                     [--no-verify]
+//   re1am_selftest saturn <image> <target> [--all-rooms] [--all-bgm] [--ogg]
+//                     [--ogg-q N] [--ffmpeg <path>] [--no-verify]
 //   re1am_selftest satcdp <BATTLE.CDP> [segment-outdir]
 //   re1am_selftest satemd <saturn.EMD> <out.EMD>
+//   re1am_selftest satwardrobe <decoded ROOM11Cv.RDT> <out.RDT>
+//                     (the wardrobe patch alone; compare with
+//                     tools/saturn_wardrobe_rdt.py patch)
 //   re1am_selftest satsong <SDDRVS.PCK> <music.CDP> <song|all> <out.wav|outdir>
 //                     [--dry]   (peak-normalised, for listening)
 //   re1am_selftest satkeys <SDDRVS.PCK> <music.CDP> <song>   (key-on registers)
@@ -40,6 +42,7 @@
 #include "core/SaturnSequenceBank.h"
 #include "core/SaturnSound.h"
 #include "core/SaturnToneBank.h"
+#include "core/SaturnWardrobe.h"
 #include "core/TitleFont.h"
 #include "core/Util.h"
 #include "core/Video.h"
@@ -305,12 +308,10 @@ int cmdSaturn(int argc, char** argv) {
     o.imagePath = argv[2];
     o.targetRoot = argv[3];
     for (int i = 4; i < argc; ++i) {
-        if (std::strcmp(argv[i], "--no-models") == 0) o.convertModels = false;
-        if (std::strcmp(argv[i], "--no-rooms") == 0) o.arenaRooms = false;
-        if (std::strcmp(argv[i], "--no-bg") == 0) o.roomBackgrounds = false;
-        if (std::strcmp(argv[i], "--no-music") == 0) o.battleMusic = false;
-        if (std::strcmp(argv[i], "--no-tick-sfx") == 0) o.tickSfx = false;
+        if (std::strcmp(argv[i], "--all-rooms") == 0) o.allRooms = true;
+        if (std::strcmp(argv[i], "--all-bgm") == 0) o.allBgm = true;
         if (std::strcmp(argv[i], "--ogg") == 0) o.musicFormat = AudioFormat::Ogg;
+        if (std::strcmp(argv[i], "--ogg-q") == 0 && i + 1 < argc) o.oggQuality = std::atoi(argv[++i]);
         if (std::strcmp(argv[i], "--ffmpeg") == 0 && i + 1 < argc) o.ffmpegPath = argv[++i];
         if (std::strcmp(argv[i], "--no-verify") == 0) o.verify = false;
     }
@@ -321,6 +322,27 @@ int cmdSaturn(int argc, char** argv) {
         std::printf("ERROR: %s\n", err.c_str());
         return 1;
     }
+    return 0;
+}
+
+// The wardrobe patch alone, to compare byte-for-byte with
+// `python tools/saturn_wardrobe_rdt.py patch IN OUT`.
+int cmdSatWardrobe(const char* in, const char* out) {
+    std::vector<uint8_t> rdt;
+    if (!readFile(in, &rdt)) {
+        std::fprintf(stderr, "cannot read %s\n", in);
+        return 1;
+    }
+    std::string why;
+    if (!patchSaturnWardrobeRdt(&rdt, &why)) {
+        std::fprintf(stderr, "%s: %s\n", in, why.c_str());
+        return 1;
+    }
+    if (!writeFile(out, rdt)) {
+        std::fprintf(stderr, "cannot write %s\n", out);
+        return 1;
+    }
+    std::printf("%s -> %s (%zu bytes)\n", in, out, rdt.size());
     return 0;
 }
 
@@ -937,6 +959,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (cmd == "satemd" && argc >= 4) return cmdSatEmd(argv[2], argv[3]);
+    if (cmd == "satwardrobe" && argc >= 4) return cmdSatWardrobe(argv[2], argv[3]);
     if (cmd == "satsong" && argc >= 6) return cmdSatSong(argc, argv);
     if (cmd == "satkeys" && argc >= 5) return cmdSatKeys(argv);
     std::printf("unknown or incomplete command\n");

@@ -21,11 +21,8 @@ private slots:
 private:
     QLineEdit* m_image = nullptr;
     QLineEdit* m_target = nullptr;
-    QCheckBox* m_models = nullptr;
-    QCheckBox* m_rooms = nullptr;
-    QCheckBox* m_backgrounds = nullptr;
-    QCheckBox* m_music = nullptr;
-    QCheckBox* m_tickSfx = nullptr;
+    QCheckBox* m_allRooms = nullptr;
+    QCheckBox* m_allBgm = nullptr;
     QComboBox* m_musicFormat = nullptr;
     QSpinBox* m_musicQuality = nullptr;
     QLineEdit* m_ffmpeg = nullptr;

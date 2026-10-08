@@ -96,9 +96,9 @@ const char* saturn_tick_snd_name(int slot, const char* baseName, const char* con
     // Slot n is what Snd_em(n) plays; the samples come from the room's SE bank
     // song its slot table names (not song n), see core/SaturnMusic.h.
     static const char* const kTickSnd[9] = {
-        "SAT_TICK_WALKA", "SAT_TICK_WALKB", "SAT_TICK_JUMP", "SAT_TICK_ATT",
-        "SAT_TICK_LAND",  "SAT_TICK_SMASH", "SAT_TICK_DAM",  "SAT_TICK_NOUT",
-        "SAT_TICK_STUCK",
+        "Tk_walkA", "Tk_walkB", "Tk_jump", "Tk_att",
+        "Tk_land",  "Tk_smash", "Tk_dam",  "Tk_Nout",
+        "Tk_stuck",
     };
     if (g_stageId != SATURN_TICK_STAGE || slot < 0 || slot >= 9) return NULL;
     // Slot 8 is empty on the PC (nothing to key on), and the stab's floor strike

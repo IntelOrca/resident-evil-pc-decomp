@@ -128,7 +128,7 @@ unsigned char saturn_emd_model_index(unsigned char modelIndex);
 // The Tick's own sound effects. The Hunter's eight enemy-sound slots (0-7:
 // He_walkA, He_walkB, He_jump, He_att, He_land, He_smash, He_dam, He_Nout) are
 // filled, on the Saturn, from the stage-3 room SE bank (/SND/SE308.CDP), which
-// the asset migrator renders into SATURN/Sound as SAT_TICK_*. The song a slot
+// the asset migrator renders into SATURN/Sound as Tk_*. The song a slot
 // plays is the one the bank's own table names (core/SaturnMusic.h), not song
 // <slot>. The Tick's stab also uses slot 8, empty on the PC. Given a slot, the
 // name the PC's room row holds for it and the row itself, returns the Saturn's

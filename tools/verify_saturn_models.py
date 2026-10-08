@@ -138,6 +138,51 @@ def check_model_table(saturn_src, port_table):
           % (index, missing))
 
 
+OUTFITS = [
+    # (model index, OG/DC costume index it replaces, Chris file, Jill file,
+    #  disc files the migrator reads for them)
+    (28, 0x33, 'EM1060.EMD', 'EM1160.EMD', ('EM1030.EMD', 'EM1031.EMD')),
+    (29, 0x34, 'EM1061.EMD', 'EM1161.EMD', ('EM1032.EMD', 'EM1033.EMD')),
+]
+DC_HDR = os.path.join(REPO, 'src', 'game', 'dc', 'EntityModels.h')
+OVERLAY_SRC = os.path.join(REPO, 'tools', 'asset_migrator', 'src', 'core',
+                           'SaturnOverlay.cpp')
+
+
+def check_outfits(saturn_src, saturn_hdr, port_table):
+    """The Saturn's alternate outfits must not collide with the OG's or the DC's.
+
+    The disc names them EM1030..EM1033 - the same names the PC and the DC give
+    their own (different) alternate outfits - so the migrator renames them and
+    the port reaches them by model-table index. This checks both halves: the
+    indices are placeholders in both blocks and are none of the DC's or the OG
+    costume's, and the migrator writes exactly the files the port asks for.
+    """
+    dc = open(DC_HDR, encoding='utf-8', errors='replace').read()
+    dc_indices = {int(v, 0) for v in re.findall(
+        r'#define\s+DC_EMD_INDEX_\w+\s+(0x[0-9A-Fa-f]+|\d+)', dc)}
+    overlay = open(OVERLAY_SRC, encoding='utf-8', errors='replace').read()
+    for index, costume, chris, jill, disc in OUTFITS:
+        check_claimed_slots_are_fillers(port_table, index, 'outfit %d' % index)
+        check(index not in dc_indices and index not in (0x33, 0x34),
+              'outfit index %d is not an OG costume (0x33/0x34) or DC index' % index)
+        m = re.search(r'#define\s+SATURN_EMD_INDEX_OUTFIT_%d\s+(\d+)' % (OUTFITS.index(
+            (index, costume, chris, jill, disc)) + 1), saturn_hdr)
+        check(m is not None and int(m.group(1)) == index,
+              'SATURN_EMD_INDEX_OUTFIT_%d is %d' % (OUTFITS.index(
+                  (index, costume, chris, jill, disc)) + 1, index))
+        for out, src in ((chris, disc[0]), (jill, disc[1])):
+            check(re.search(r'\{\s*"%s"\s*,\s*"%s"' % (src, out), overlay) is not None,
+                  'the migrator converts disc %s into %s' % (src, out))
+            # No release uses these names for anything else.
+            check(out.lower() not in port_table_names(port_table),
+                  '%s is not a name the PC table already uses' % out)
+
+
+def port_table_names(port_table):
+    return {os.path.basename(e).lower() for e in port_table}
+
+
 def check_tick_swap(saturn_src, saturn_hdr):
     m = re.search(r'#define\s+SATURN_EMD_INDEX_HUNTER\s+(\d+)', saturn_hdr)
     check(m is not None and int(m.group(1)) == TICK_FROM_INDEX,
@@ -150,7 +195,10 @@ def check_tick_swap(saturn_src, saturn_hdr):
 
     # The guard has to be exactly the two conditions and nothing else: widened,
     # every Hunter in the mansion becomes a Tick; narrowed, stage 3's are not.
-    guard = re.search(r'if\s*\((.*?)\)\s*\{\s*return\s+SATURN_EMD_INDEX_TICK;',
+    # (?!if\() keeps the match inside ONE if: saturn_emd_model_index() also holds
+    # the outfit remap and the file probe, and a plain non-greedy `.*?` would
+    # start at the first `if (` of the file and swallow all of them.
+    guard = re.search(r'if\s*\(((?:(?!\bif\s*\().)*?)\)\s*\{\s*return\s+SATURN_EMD_INDEX_TICK;',
                       saturn_src, re.S)
     if not check(guard is not None,
                  'saturn_emd_model_index() returns SATURN_EMD_INDEX_TICK'):
@@ -240,6 +288,7 @@ def main():
           % (len(port_table), BLOCK_ENTRIES))
 
     check_model_table(saturn_src, port_table)
+    check_outfits(saturn_src, saturn_hdr, port_table)
     check_tick_swap(saturn_src, saturn_hdr)
     check_wiring(loader_src)
     check_build_files()

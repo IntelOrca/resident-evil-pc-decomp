@@ -5,7 +5,7 @@
 // tools/gen_ps1_audio_manifest.py; this only decodes and writes.
 //
 // The files REPLACE the tree's own ones in <tree>/Sound and <tree>/Voice, as
-// WAV or Ogg Vorbis. Everything written is listed in Sound/PS1AUDIO.TXT, which
+// WAV or Ogg Vorbis. Everything written is listed in Sound/AUDIO.TXT, which
 // is also what tells the game to mix at 44.1 kHz; removePs1Audio() deletes the
 // listed files so a PC copy can restore the originals cleanly. Names the PS1
 // has no counterpart for keep the tree's file.
@@ -37,7 +37,7 @@ struct Ps1AudioStats {
 };
 
 // The list the game and removePs1Audio() read, inside <tree>/Sound.
-inline const char* ps1AudioListName() { return "PS1AUDIO.TXT"; }
+inline const char* ps1AudioListName() { return "AUDIO.TXT"; }
 
 // Replace the sounds of the tree at `treeRoot` (<target>/USA or JPN). Voices
 // need a raw 2352-byte image; from a 2048-byte one they are skipped with a

@@ -344,12 +344,12 @@ def main():
         if (k >> 8) == 8:
             table[k & 0xFF] = song - 768
     hdr = open("tools/asset_migrator/src/core/SaturnMusic.h", encoding="utf-8").read()
-    rows = re.findall(r'\{"SE308\.CDP", (\d+), "(SAT_TICK_\w+)"', hdr)
+    rows = re.findall(r'\{"SE308\.CDP", (\d+), "(Tk_\w+)"', hdr)
     mine = [int(a) for a, _ in rows]
     check(mine == [table[n] for n in range(9)],
           "migrator songs %s == SE308's slot table %s" % (mine, [table.get(n) for n in range(9)]))
     mod = open("src/game/saturn/SaturnModels.cpp", encoding="utf-8").read()
-    names = re.findall(r'"(SAT_TICK_\w+)"', mod)
+    names = re.findall(r'"(Tk_\w+)"', mod)
     check(names == [n for _, n in rows],
           "SaturnModels.cpp slot names == migrator names, in slot order")
     # every Hunter room's bank holds the same eight samples under its own song numbers
