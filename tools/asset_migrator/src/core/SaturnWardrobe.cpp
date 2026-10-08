@@ -33,6 +33,33 @@ const uint8_t kSatC2[] = {  // "This fits perfectly.   / Will you change your ou
     0x33, 0x45, 0x48, 0x48, 0x00, 0x55, 0x4b, 0x51, 0x00, 0x3f, 0x44, 0x3d, 0x4a,
     0x43, 0x41, 0x00, 0x55, 0x4b, 0x51, 0x4e, 0x02, 0x4b, 0x51, 0x50, 0x42, 0x45,
     0x50, 0x1b};
+// The Japanese disc's three (Bio Hazard GAME5 0x0609EAB7 / 0x0609EAE2 /
+// 0x0609EB0D, pointers at 0x0609EC80), same order and meaning, in the PC
+// Biohazard.exe encoding. Their GAME5 tail is `02 08 02 0A 04 01 00`: one more
+// line break before the yes/no than the USA's. It is dropped with the rest of
+// the tail, so the question ends at its '?' like the room's own yes/no
+// (message 1: `...か?` then `08 00 01 01`) - the line the room message box
+// lays its YES / NO under.
+const uint8_t kSatJpnC0[] = {  // "\nとてもカッコイイコスチュームがある / コスチュームチェンジしますか?"
+    0x02, 0x6a, 0x69, 0x79, 0xac, 0xf6, 0xb0, 0xa8, 0xa8, 0xb0, 0xb3, 0xb7, 0xf4,
+    0x3b, 0xc7, 0x85, 0x57, 0x7f, 0x00, 0x03, 0x00, 0xb0, 0xb3, 0xb7, 0xf4, 0x3b,
+    0xc7, 0xb7, 0xf1, 0xd4, 0xdb, 0x62, 0x75, 0x63, 0x5c, 0x1b};
+const uint8_t kSatJpnC1[] = {  // "\n みたことのあるコスチュームがある / コスチュームチェンジしますか?"
+    0x02, 0x00, 0x76, 0x66, 0x60, 0x6a, 0x6f, 0x57, 0x7f, 0xb0, 0xb3, 0xb7, 0xf4,
+    0x3b, 0xc7, 0x85, 0x57, 0x7f, 0x00, 0x03, 0x00, 0xb0, 0xb3, 0xb7, 0xf4, 0x3b,
+    0xc7, 0xb7, 0xf1, 0xd4, 0xdb, 0x62, 0x75, 0x63, 0x5c, 0x1b};
+const uint8_t kSatJpnC2[] = {  // "\n  サイズのピッタリなものがある / コスチュームチェンジしますか?"
+    0x02, 0x00, 0x00, 0xb1, 0xa8, 0xdc, 0x6f, 0xea, 0xf6, 0xb6, 0xce, 0x6b, 0x79,
+    0x6f, 0x85, 0x57, 0x7f, 0x00, 0x03, 0x00, 0xb0, 0xb3, 0xb7, 0xf4, 0x3b, 0xc7,
+    0xb7, 0xf1, 0xd4, 0xdb, 0x62, 0x75, 0x63, 0x5c, 0x1b};
+// What follows each question in GAME5 (yes/no whose yes is post-action 4).
+const uint8_t kGame5UsaTail[] = {0x08, 0x02, 0x0A, 0x04, 0x01, 0x00};
+const uint8_t kGame5JpnTail[] = {0x02, 0x08, 0x02, 0x0A, 0x04, 0x01, 0x00};
+// GAME5.PRG loads at 0x0602B000; where each release keeps its first question.
+const uint32_t kGame5Base = 0x0602B000;
+const uint32_t kUsaQuestions = 0x0609E8BC;
+const uint32_t kJpnQuestions = 0x0609EAB7;
+
 // A room message's yes/no with no post-action (room message 1's own tail): the
 // script reads the answer itself with `state_byte_test 5,0,0`.
 const uint8_t kRoomYesNoTail[] = {0x08, 0x00, 0x01, 0x01};
@@ -120,9 +147,50 @@ Bytes wardrobeEvent(uint8_t modelByte, const Bytes& wearing, const Bytes& wearOp
     return out;
 }
 
+struct QuestionSet {
+    const uint8_t* text[3];
+    size_t size[3];
+};
+
+QuestionSet questions(SaturnRegion region) {
+    if (region == SaturnRegion::Jpn)
+        return {{kSatJpnC0, kSatJpnC1, kSatJpnC2},
+                {sizeof(kSatJpnC0), sizeof(kSatJpnC1), sizeof(kSatJpnC2)}};
+    return {{kSatC0, kSatC1, kSatC2}, {sizeof(kSatC0), sizeof(kSatC1), sizeof(kSatC2)}};
+}
+
+// The three questions, each followed by its GAME5 tail, back to back from `at`.
+bool game5HasQuestions(const Bytes& game5, uint32_t at, const QuestionSet& q,
+                       const uint8_t* tail, size_t tailSize) {
+    size_t off = at - kGame5Base;
+    for (int i = 0; i < 3; ++i) {
+        if (off + q.size[i] + tailSize > game5.size()) return false;
+        if (std::memcmp(game5.data() + off, q.text[i], q.size[i]) != 0 ||
+            std::memcmp(game5.data() + off + q.size[i], tail, tailSize) != 0)
+            return false;
+        off += q.size[i] + tailSize;
+    }
+    return true;
+}
+
 }  // namespace
 
-bool patchSaturnWardrobeRdt(std::vector<uint8_t>* rdtIn, std::string* why) {
+bool saturnRegionFromGame5(const std::vector<uint8_t>& game5, SaturnRegion* out) {
+    if (game5HasQuestions(game5, kUsaQuestions, questions(SaturnRegion::Usa),
+                          kGame5UsaTail, sizeof(kGame5UsaTail))) {
+        *out = SaturnRegion::Usa;
+        return true;
+    }
+    if (game5HasQuestions(game5, kJpnQuestions, questions(SaturnRegion::Jpn),
+                          kGame5JpnTail, sizeof(kGame5JpnTail))) {
+        *out = SaturnRegion::Jpn;
+        return true;
+    }
+    return false;
+}
+
+bool patchSaturnWardrobeRdt(std::vector<uint8_t>* rdtIn, SaturnRegion region,
+                            std::string* why) {
     Bytes d = *rdtIn;
     const size_t n = d.size();
     if (n < 0x94) {
@@ -209,9 +277,9 @@ bool patchSaturnWardrobeRdt(std::vector<uint8_t>* rdtIn, std::string* why) {
     std::vector<Bytes> msgs;
     for (int i = 0; i < count; ++i)
         msgs.emplace_back(d.begin() + mb + bounds[i], d.begin() + mb + bounds[i + 1]);
-    for (const auto& t : {std::make_pair(kSatC0, sizeof(kSatC0)), std::make_pair(kSatC1, sizeof(kSatC1)),
-                          std::make_pair(kSatC2, sizeof(kSatC2))}) {
-        Bytes m(t.first, t.first + t.second);
+    const QuestionSet q = questions(region);
+    for (int i = 0; i < 3; ++i) {
+        Bytes m(q.text[i], q.text[i] + q.size[i]);
         put(&m, kRoomYesNoTail, sizeof(kRoomYesNoTail));
         msgs.push_back(m);
     }

@@ -16,7 +16,10 @@ the first set **Western difficulty** (`western_difficulty()` in `src/Globals.h`)
 
 `western_difficulty()` is true when any of:
 
-- `g_bSaturnMode` - the Saturn campaign **and** the Battle Game;
+- `g_bSaturnMode` on the USA tree - the Saturn campaign **and** the Battle Game.
+  Not on the JPN tree: that is the Japanese Saturn release ("Bio Hazard",
+  overlay `SATURN_JPN`), whose five `GAME*.PRG` hold the PC's
+  **first**-playthrough weapon table - Japanese rules;
 - `g_bDcMode` and `g_DcDifficulty != DC_DIFFICULTY_TRAINING` - STANDARD, ADVANCED
   and ADVANCED* (TRAINING keeps the PC rules, as before);
 - `[Game] WesternDifficulty=1` in config.ini - the opt-in for `Mode=OG`.

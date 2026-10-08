@@ -15,6 +15,8 @@
 #include "../../DebugPrint.h"
 #include "../FileLoader.h"
 #include "../SFXIds.h"
+#include "../SpriteRenderer.h"
+#include "../../marni/MarniSystem.h"
 #include "../../platform/platform.h"
 #include <cmath>
 #include <cstdio>
@@ -1161,6 +1163,17 @@ static int battle_ranking_place(int character, int score)
 // run returns to it - and draws the BMP as the display image. The colour of a
 // text run is one of the palette block's rows; every row is the white ramp
 // scaled into one hue, so the port draws the white ramp and tints it.
+//
+// The Japanese release ("Bio Hazard", the SATURN_JPN overlay, read with the JPN
+// tree) loads no WAPON3.BIN / SAVE2.BIN. Its RANKING.PRG (loader 0x0602B1CC)
+// uploads what BATTLE.BIN itself carries, which the USA module overwrote:
+//   BATTLE.BIN +0x35000 X68 SSCONV, WAPON3.BIN's very layout: the seven item
+//                       labels in Japanese (ベレッタの弾 ... グレネード火炎弾)
+//   BATTLE.BIN +0x31EB0 128x64 4bpp yes/no prompts, four 128x16 rows -
+//                       セーブしますか? / 続けて遊びますか? / YES / NO (VDP1
+//                       characters 0x2400 / 0x2480 / 0x2500 / 0x2580), palette
+//                       +0x32EB0 (a grey ramp; SAVE2.BIN's USA counterpart)
+// and RANKING.PRG draws the "BIO HAZARD" logo behind both screens (below).
 #define SAT_BATTLE_BIN_SIZE   225280
 #define SAT_WAPON3_BIN_SIZE   6824
 #define SAT_FONT_A_OFF        0x0030
@@ -1169,12 +1182,17 @@ static int battle_ranking_place(int character, int score)
 #define SAT_BMP_OFF           0x10000
 #define SAT_LABELS_OFF        0x0028
 #define SAT_LABELS_PAL_OFF    0x18A8
+#define SAT_JPN_LABELS_OFF    0x35000    // BATTLE.BIN, WAPON3.BIN's layout
+#define SAT_JPN_PROMPT_OFF    0x31EB0    // BATTLE.BIN, 128x64 4bpp
+#define SAT_JPN_PROMPT_PAL_OFF 0x32EB0
+#define SAT_PROMPT_V          80         // the prompts' rows in the fonts page
 #define SAT_PAGE_FONTS_SLOT   13
 #define SAT_PAGE_FONTS_ID     9
 #define SAT_PAGE_LABELS_SLOT  12
 #define SAT_PAGE_LABELS_ID    8
 
 static int s_resultsArt = 0;             // 1 = the Saturn's art is loaded
+static int s_resultsJpn = 0;             // 1 = the Japanese release's art
 
 // Palette rows of the font block (CRAM 0x200 + 0x20 * row), as the tint that
 // turns the white ramp into that row. Read from the rows' brightest entries.
@@ -1252,27 +1270,42 @@ static int sat_glyph_index(char c, int fontA)
 }
 #define SAT_GLYPH_PTS 39                  // font A
 
+// Saturn RGB555 brightness (0..93) for picking the nearest ramp entry.
+static int sat_luma(unsigned short c)
+{
+    return (c & 31) + ((c >> 5) & 31) + ((c >> 10) & 31);
+}
+
 static int battle_results_load_art(void)
 {
     s_resultsArt = 0;
+    // The JPN tree is what selects the SATURN_JPN overlay (AssetPath.cpp), so
+    // it is also what says which release's art that overlay holds.
+    s_resultsJpn = (GetAssetVersion() != 0);
     unsigned char* bat = (unsigned char*)malloc(SAT_BATTLE_BIN_SIZE + 0x40);
-    unsigned char* wap = (unsigned char*)malloc(SAT_WAPON3_BIN_SIZE + 0x40);
+    unsigned char* wap = s_resultsJpn ? NULL : (unsigned char*)malloc(SAT_WAPON3_BIN_SIZE + 0x40);
     unsigned char* tim = (unsigned char*)malloc(0x10000);
     unsigned short* bg = (unsigned short*)malloc(320 * 240 * 2);
-    int ok = bat && wap && tim && bg;
+    int ok = bat && (wap || s_resultsJpn) && tim && bg;
     if (ok) {
         const int nb = LoadFile(GAME_DATA_ROOT "data\\battle.bin", bat, 0x20);
-        const int nw = LoadFile(GAME_DATA_ROOT "data\\wapon3.bin", wap, 0x20);
-        ok = nb == SAT_BATTLE_BIN_SIZE && nw == SAT_WAPON3_BIN_SIZE &&
+        ok = nb == SAT_BATTLE_BIN_SIZE &&
              bat[SAT_BMP_OFF] == 'B' && bat[SAT_BMP_OFF + 1] == 'M';
+        if (ok && !s_resultsJpn) {
+            const int nw = LoadFile(GAME_DATA_ROOT "data\\wapon3.bin", wap, 0x20);
+            ok = nw == SAT_WAPON3_BIN_SIZE;
+        }
     }
+    // The item labels: WAPON3.BIN on the USA disc, BATTLE.BIN's own on the JPN.
+    const unsigned char* labels = s_resultsJpn ? bat + SAT_JPN_LABELS_OFF : wap;
     if (ok) {
         // Page A: font B glyph k at ((k % 32) * 8, (k / 32) * 16), font A glyph
         // k at ((k % 16) * 16, 32 + (k / 16) * 16), both from palette row 0.
+        // JPN: the prompt art below them, at (0, SAT_PROMPT_V).
         unsigned short clut[16];
         for (int i = 0; i < 16; i++) clut[i] = sat_to_ps1(read_be16(bat + SAT_FONT_PAL_OFF + 2 * i));
         clut[0] = 0;
-        sat_tim_begin(tim, 256, 80, clut);
+        sat_tim_begin(tim, 256, s_resultsJpn ? SAT_PROMPT_V + 64 : 80, clut);
         unsigned char* pix = tim + 20 + 32 + 12;
         for (int k = 0; k < 40; k++) {
             const unsigned char* g = bat + SAT_FONT_B_OFF + k * 64;
@@ -1288,16 +1321,43 @@ static int battle_results_load_art(void)
             sat_blit_cell(pix, 256, g + 64, x,     y + 8);
             sat_blit_cell(pix, 256, g + 96, x + 8, y + 8);
         }
+        if (s_resultsJpn) {
+            // The prompts are a plain 128-pixel-wide bitmap (VDP1 sprite data,
+            // left pixel in the high nibble like the cells), drawn on the Saturn
+            // with their own grey ramp. The port's page has one CLUT - the font
+            // ramp, white like it - so each prompt index is moved onto the font
+            // ramp's nearest entry; index 0 stays the transparent one.
+            unsigned char remap[16];
+            remap[0] = 0;
+            for (int i = 1; i < 16; i++) {
+                const int want = sat_luma(read_be16(bat + SAT_JPN_PROMPT_PAL_OFF + 2 * i));
+                int best = 1;
+                for (int k = 2; k < 16; k++) {
+                    const int dk = abs(sat_luma(read_be16(bat + SAT_FONT_PAL_OFF + 2 * k)) - want);
+                    const int db = abs(sat_luma(read_be16(bat + SAT_FONT_PAL_OFF + 2 * best)) - want);
+                    if (dk < db) best = k;
+                }
+                remap[i] = (unsigned char)best;
+            }
+            const unsigned char* src = bat + SAT_JPN_PROMPT_OFF;
+            for (int y = 0; y < 64; y++) {
+                unsigned char* dst = pix + (SAT_PROMPT_V + y) * 256 / 2;
+                for (int b = 0; b < 64; b++) {
+                    const unsigned char v = src[y * 64 + b];
+                    dst[b] = (unsigned char)(remap[v >> 4] | (remap[v & 15] << 4));
+                }
+            }
+        }
         LoadTexturePage(tim, SAT_PAGE_FONTS_ID, 0, SAT_PAGE_FONTS_SLOT, 0, 0, 0, 0);
 
         // Page B: label L at ((L % 2) * 112, (L / 2) * 16), its own palette.
-        for (int i = 0; i < 16; i++) clut[i] = sat_to_ps1(read_be16(wap + SAT_LABELS_PAL_OFF + 2 * i));
+        for (int i = 0; i < 16; i++) clut[i] = sat_to_ps1(read_be16(labels + SAT_LABELS_PAL_OFF + 2 * i));
         clut[0] = 0;
         sat_tim_begin(tim, 256, 64, clut);
         pix = tim + 20 + 32 + 12;
         for (int L = 0; L < 7; L++) {
             for (int c = 0; c < 14; c++) {
-                const unsigned char* g = wap + SAT_LABELS_OFF + (L * 14 + c) * 64;
+                const unsigned char* g = labels + SAT_LABELS_OFF + (L * 14 + c) * 64;
                 const int x = (L % 2) * 112 + c * 8, y = (L / 2) * 16;
                 sat_blit_cell(pix, 256, g,      x, y);
                 sat_blit_cell(pix, 256, g + 32, x, y + 8);
@@ -1327,6 +1387,227 @@ static int battle_results_load_art(void)
     }
     free(bat); free(wap); free(tim); free(bg);
     return s_resultsArt;
+}
+
+// --- the Japanese release's "BIO HAZARD" logo -------------------------------
+// Bio Hazard RANKING.PRG draws a 3D "BIO HAZARD" behind the score screen, the
+// name entry, the ranking and both prompts (every state of 0x0602D398 but the
+// first calls 0x0602D2E4). The model is in the USA module too (0x0603C2EC), but
+// nothing there calls its copy of the draw (0x0602D33C) - the logo is a Japanese
+// release feature, gated here on the JPN art. tools/saturn_ranking_logo.py is
+// the reference renderer.
+//
+//   0x0602D2E4  slPerspective(0x2000 = 45 degrees); push; slTranslate(pos
+//               0x06042610); slRotX/Y/Z(0x06042608/A/C); the tree walk
+//               0x0602D230 on root 0x0603C18C; pop; rot Y -= 91, rot Z += 182
+//   0x0602D230  push; slTranslate / slRotZ,Y,X / slScale with the record's own
+//               values; slPutPolygonX(part, light 0x06042620); the child under
+//               the same matrix; pop; then the sibling
+//   state 0     angles 0; pos (0, 0, 64.0); CRAM 0x25F00020 (colour 16..31) =
+//               4 x black, then 0x8000 | (i - 4): a red ramp R = 0..11 of 31;
+//               light (0x93CD, 0x93CD, 0x93CD) = normalised (1, 1, 1)
+//
+// An object record is 0x2C bytes: {XPDATA*, FIXED pos[3], ANGLE ang[3] + pad,
+// FIXED scl[3], child*, sibling*}; an XPDATA 24: {POINT* (FIXED x,y,z), count,
+// POLYGON* (FIXED normal[3], u16 vertices[4]), count, ATTR*, normal work}. All
+// nine records hold an identity transform and every ATTR is the same (00 2B
+// 0000 00E0 0010 0000 0004: single-sided, centre Z sort, light, palette, colour
+// 16, no texture), so the logo is all nine letters under the one matrix, each
+// face flat-shaded on the ramp. The loader walks the tree and refuses a record
+// that is not an identity, rather than assume.
+//
+// PORT APPROXIMATION: SGL's light-to-palette offset is not read out of the
+// library. The port uses offset = clamp(-(n . l) * 31, 0, 15), calibrated on a
+// capture of the real screen (the face toward the camera is the brightest
+// entry, ~90/255 red; faces turned from the light fall on the black entries -
+// the dark edges the logo shows there). Faces are depth-sorted far to near by
+// their centre, as the attribute's Z sort asks; the screen is 320 wide with its
+// centre at (160, 120).
+#define SAT_PRG_BASE          0x0602B000u
+#define SAT_PRG_SIZE_JPN      70080
+#define SAT_LOGO_ROOT_JPN     0x0603C18Cu
+#define SAT_LOGO_MAX_PARTS    16
+#define SAT_LOGO_MAX_POINTS   512
+#define SAT_LOGO_MAX_POLYS    512
+#define SAT_LOGO_DIST         64.0f
+#define SAT_LOGO_ROT_Y_STEP   (-91)
+#define SAT_LOGO_ROT_Z_STEP   182
+#define SAT_LOGO_LIGHT        (float)(0x93CD / 65536.0)
+#define SAT_LOGO_DEPTH        0xF000u    // behind every results text sprite
+
+struct SatLogoPoly {
+    float normal[3];
+    unsigned short v[4];                 // into s_logoPts; v[2] == v[3]: triangle
+};
+static float       s_logoPts[SAT_LOGO_MAX_POINTS][3];
+static SatLogoPoly s_logoPolys[SAT_LOGO_MAX_POLYS];
+static int         s_logoPointCount = 0;
+static int         s_logoPolyCount = 0;
+static int         s_logoReady = 0;
+static unsigned int s_logoFrame = 0;
+
+static unsigned int read_be32(const unsigned char* p)
+{
+    return ((unsigned int)p[0] << 24) | ((unsigned int)p[1] << 16) |
+           ((unsigned int)p[2] << 8) | p[3];
+}
+
+static float sat_fixed(const unsigned char* p)
+{
+    return (float)(int)read_be32(p) * (1.0f / 65536.0f);
+}
+
+// One object record and what hangs off it, depth first. Returns 0 on anything
+// the port does not expect.
+static int sat_logo_walk(const unsigned char* prg, unsigned int addr, int depth)
+{
+    if (addr == 0) return 1;
+    if (depth > SAT_LOGO_MAX_PARTS || addr < SAT_PRG_BASE ||
+        addr + 0x2C > SAT_PRG_BASE + SAT_PRG_SIZE_JPN) return 0;
+    const unsigned char* rec = prg + (addr - SAT_PRG_BASE);
+    for (int i = 0; i < 3; i++) {
+        if (read_be32(rec + 4 + 4 * i) != 0) return 0;          // pos
+        if (read_be32(rec + 24 + 4 * i) != 0x10000u) return 0;  // scale 1.0
+    }
+    if (read_be32(rec + 16) != 0 || (read_be32(rec + 20) >> 16) != 0) return 0;  // angles
+
+    const unsigned int part = read_be32(rec);
+    if (part != 0) {
+        if (part < SAT_PRG_BASE || part + 24 > SAT_PRG_BASE + SAT_PRG_SIZE_JPN) return 0;
+        const unsigned char* xp = prg + (part - SAT_PRG_BASE);
+        const unsigned int pts = read_be32(xp), npts = read_be32(xp + 4);
+        const unsigned int pol = read_be32(xp + 8), npol = read_be32(xp + 12);
+        if ((int)npts > SAT_LOGO_MAX_POINTS - s_logoPointCount ||
+            (int)npol > SAT_LOGO_MAX_POLYS - s_logoPolyCount ||
+            pts < SAT_PRG_BASE || pts + npts * 12 > SAT_PRG_BASE + SAT_PRG_SIZE_JPN ||
+            pol < SAT_PRG_BASE || pol + npol * 20 > SAT_PRG_BASE + SAT_PRG_SIZE_JPN)
+            return 0;
+        const int first = s_logoPointCount;
+        for (unsigned int k = 0; k < npts; k++) {
+            const unsigned char* p = prg + (pts - SAT_PRG_BASE) + 12 * k;
+            for (int c = 0; c < 3; c++) s_logoPts[s_logoPointCount][c] = sat_fixed(p + 4 * c);
+            s_logoPointCount++;
+        }
+        for (unsigned int k = 0; k < npol; k++) {
+            const unsigned char* p = prg + (pol - SAT_PRG_BASE) + 20 * k;
+            SatLogoPoly* q = &s_logoPolys[s_logoPolyCount++];
+            for (int c = 0; c < 3; c++) q->normal[c] = sat_fixed(p + 4 * c);
+            for (int c = 0; c < 4; c++) {
+                const unsigned int v = read_be16(p + 12 + 2 * c);
+                if (v >= npts) return 0;
+                q->v[c] = (unsigned short)(first + v);
+            }
+        }
+    }
+    return sat_logo_walk(prg, read_be32(rec + 36), depth + 1) &&   // child
+           sat_logo_walk(prg, read_be32(rec + 40), depth + 1);     // sibling
+}
+
+static void battle_results_load_logo(void)
+{
+    s_logoReady = 0;
+    s_logoPointCount = 0;
+    s_logoPolyCount = 0;
+    if (!s_resultsJpn) return;
+    unsigned char* prg = (unsigned char*)malloc(SAT_PRG_SIZE_JPN + 0x40);
+    if (prg == NULL) return;
+    if (LoadFile(GAME_DATA_ROOT "data\\ranking.prg", prg, 0x20) == SAT_PRG_SIZE_JPN &&
+        sat_logo_walk(prg, SAT_LOGO_ROOT_JPN, 0) && s_logoPolyCount > 0) {
+        s_logoReady = 1;
+    } else {
+        dbg_printf("[battle] no Bio Hazard RANKING.PRG logo - re-run the asset migrator's "
+                   "Saturn tab on the Japanese disc\n");
+    }
+    free(prg);
+}
+
+// The type-13 sprite command's callback: the logo for s_logoFrame, drawn in
+// the queue's place - over the backdrop, under every text sprite.
+static void sat_logo_draw(float scaleX, float scaleY)
+{
+    // slRotX(0) slRotY(ay) slRotZ(az) on the pushed matrix: a point goes
+    // through Rz first, then Ry (Rx is the identity).
+    const float ay = (float)(short)(SAT_LOGO_ROT_Y_STEP * (int)s_logoFrame) * (6.2831853f / 65536.0f);
+    const float az = (float)(short)(SAT_LOGO_ROT_Z_STEP * (int)s_logoFrame) * (6.2831853f / 65536.0f);
+    const float cy = cosf(ay), sy = sinf(ay), cz = cosf(az), sz = sinf(az);
+    const float m[3][3] = {
+        {  cy * cz, -cy * sz, sy },
+        {       sz,       cz, 0.0f },
+        { -sy * cz,  sy * sz, cy },
+    };
+    // slPerspective(45 degrees) over a 320-wide screen.
+    const float scr = 160.0f / tanf(22.5f * 3.14159265f / 180.0f);
+
+    static float view[SAT_LOGO_MAX_POINTS][3];
+    for (int i = 0; i < s_logoPointCount; i++) {
+        const float* p = s_logoPts[i];
+        for (int r = 0; r < 3; r++) view[i][r] = m[r][0] * p[0] + m[r][1] * p[1] + m[r][2] * p[2];
+        view[i][2] += SAT_LOGO_DIST;
+    }
+
+    struct Face { float z; int poly; unsigned char shade; };
+    static Face faces[SAT_LOGO_MAX_POLYS];
+    int n = 0;
+    for (int i = 0; i < s_logoPolyCount; i++) {
+        const SatLogoPoly* q = &s_logoPolys[i];
+        const int corners = (q->v[2] == q->v[3]) ? 3 : 4;
+        float c[3] = { 0.0f, 0.0f, 0.0f };
+        for (int k = 0; k < corners; k++)
+            for (int r = 0; r < 3; r++) c[r] += view[q->v[k]][r];
+        for (int r = 0; r < 3; r++) c[r] /= (float)corners;
+        float nv[3];
+        for (int r = 0; r < 3; r++)
+            nv[r] = m[r][0] * q->normal[0] + m[r][1] * q->normal[1] + m[r][2] * q->normal[2];
+        // Single plane: only a face whose normal points at the camera.
+        if (nv[0] * c[0] + nv[1] * c[1] + nv[2] * c[2] >= 0.0f) continue;
+        float d = -(nv[0] + nv[1] + nv[2]) * SAT_LOGO_LIGHT;
+        int offset = (int)(d * 31.0f);
+        if (offset < 0) offset = 0;
+        if (offset > 15) offset = 15;
+        faces[n].z = c[2];
+        faces[n].poly = i;
+        faces[n].shade = (unsigned char)offset;
+        n++;
+    }
+    // Far to near; a plain insertion sort keeps equal depths in model order.
+    for (int i = 1; i < n; i++) {
+        const Face f = faces[i];
+        int j = i - 1;
+        while (j >= 0 && faces[j].z < f.z) { faces[j + 1] = faces[j]; j--; }
+        faces[j + 1] = f;
+    }
+
+    static float verts[1024 * 3][10];
+    int tris = 0;
+    for (int i = 0; i < n; i++) {
+        const SatLogoPoly* q = &s_logoPolys[faces[i].poly];
+        // The ramp entry: four blacks, then R = 0..11 of 31.
+        const int r5 = faces[i].shade < 4 ? 0 : faces[i].shade - 4;
+        const float red = (float)((r5 << 3) | (r5 >> 2)) * (1.0f / 255.0f);
+        const int fan = (q->v[2] == q->v[3]) ? 1 : 2;
+        for (int t = 0; t < fan; t++) {
+            const int idx[3] = { q->v[0], q->v[t + 1], q->v[t + 2] };
+            for (int k = 0; k < 3; k++) {
+                const float* p = view[idx[k]];
+                float* o = verts[tris * 3 + k];
+                o[0] = (160.0f + p[0] * scr / p[2]) * scaleX;
+                o[1] = (120.0f + p[1] * scr / p[2]) * scaleY;
+                o[2] = 0.5f;
+                o[3] = p[2];
+                o[4] = 0.5f;
+                o[5] = 0.5f;
+                o[6] = red;
+                o[7] = 0.0f;
+                o[8] = 0.0f;
+                o[9] = 1.0f;
+            }
+            if (++tris == 1024) {
+                MarniDrawTrianglesPersp(&verts[0][0], tris, MARNI_NULL_HANDLE);
+                tris = 0;
+            }
+        }
+    }
+    if (tris > 0) MarniDrawTrianglesPersp(&verts[0][0], tris, MARNI_NULL_HANDLE);
 }
 
 // One glyph or label from the art pages, at screen (x, y), tinted.
@@ -1422,8 +1703,11 @@ static int sat_flicker(void)
 }
 
 // One results frame: present what was queued and read the edge-pressed pad.
+// The Japanese release's logo is queued first, and turns once per frame -
+// 0x0602D2E4 steps its angles after every draw.
 static unsigned int battle_results_frame(void)
 {
+    if (s_logoReady && AddSpriteCallback(sat_logo_draw, SAT_LOGO_DEPTH)) s_logoFrame++;
     Task_sleep(1);
     s_resultsFrame++;
     return g_PlayerPadHeld;
@@ -1558,6 +1842,9 @@ static void battle_results_begin(void)
         // the Saturn's screens with; the run still records its result.
         dbg_printf("[battle] results art missing - re-run the asset migrator's Saturn tab\n");
     }
+    // State 0 of 0x0602D398: the logo starts square to the camera.
+    battle_results_load_logo();
+    s_logoFrame = 0;
 
     // RANKING's music, /SND/NAME.CDP, from the score screen on.
     bgm_play_group_channel(SATURN_BGM_GROUP_RANKING, 0);
@@ -1582,7 +1869,15 @@ static void battle_results_begin(void)
 // prompt art is SAVE2.BIN (128x80, "Do you want to save?" / "Do you want to
 // continue this game?" with YES and NO); the port spells it in font B, which
 // has no question mark.
-static int battle_yes_no(int character, int place, const char* question)
+//
+// The Japanese release has no English to spell, so it draws its own art
+// (BATTLE.BIN +0x31EB0, loaded under the fonts at SAT_PROMPT_V): row `which`
+// is the question - 0 セーブしますか?, 1 続けて遊びますか? - and rows 2 / 3
+// YES / NO, whose letters span u 38..81 and 46..74 of their 128-wide rows.
+// PORT LAYOUT: they go in the same box and the same colours as the English
+// prompt; the Saturn's own VDP1 placement (0x0602DA80, inside a 152x96 window
+// sprite) is not reproduced.
+static int battle_yes_no(int character, int place, const char* question, int which)
 {
     int yes = 1;
     const int qx = (40 - (int)strlen(question)) / 2;
@@ -1590,9 +1885,18 @@ static int battle_yes_no(int character, int place, const char* question)
         if (s_resultsArt) {
             battle_draw_ranking(character, place, -1);
             battle_solid(48, 200, 224, 40, 0, 0, 60, 120);
-            sat_text_b(question, qx, 26, SAT_PAL_WHITE);
-            sat_text_b("YES", 15, 28, yes ? sat_flicker() : SAT_PAL_GREY);
-            sat_text_b("NO", 22, 28, yes ? SAT_PAL_GREY : sat_flicker());
+            const int yesPal = yes ? sat_flicker() : SAT_PAL_GREY;
+            const int noPal = yes ? SAT_PAL_GREY : sat_flicker();
+            if (s_resultsJpn) {
+                sat_draw(0, 0, SAT_PROMPT_V + 16 * which, 128, 16, 96, 203,
+                         kSatPalTint[SAT_PAL_WHITE]);
+                sat_draw(0, 38, SAT_PROMPT_V + 32, 44, 16, 110, 221, kSatPalTint[yesPal]);
+                sat_draw(0, 46, SAT_PROMPT_V + 48, 29, 16, 170, 221, kSatPalTint[noPal]);
+            } else {
+                sat_text_b(question, qx, 26, SAT_PAL_WHITE);
+                sat_text_b("YES", 15, 28, yesPal);
+                sat_text_b("NO", 22, 28, noPal);
+            }
         }
         const unsigned int pad = battle_results_frame();
         if (pad & (BATTLE_PAD_LEFT | BATTLE_PAD_RIGHT | BATTLE_PAD_UP | BATTLE_PAD_DOWN)) yes = !yes;
@@ -1612,8 +1916,8 @@ static int battle_results_epilogue(int character, int place)
             if (battle_results_frame() & (BATTLE_PAD_CONFIRM | BATTLE_PAD_CANCEL)) break;
         }
     }
-    if (battle_yes_no(character, place, "DO YOU WANT TO SAVE")) battle_ranking_save();
-    return battle_yes_no(character, place, "DO YOU WANT TO CONTINUE");
+    if (battle_yes_no(character, place, "DO YOU WANT TO SAVE", 0)) battle_ranking_save();
+    return battle_yes_no(character, place, "DO YOU WANT TO CONTINUE", 1);
 }
 
 // Dying in a run. Read from GAME5.PRG and RANKING.PRG:
@@ -1904,16 +2208,20 @@ void saturn_battle_draw_hud(void)
     // fontus.tim and the JPN FONT.TIM), and digits are at their ASCII codes.
     //
     // Eight characters, no space after the prime: the glyphs carry their own
-    // side bearing, so a space reads as a wide gap. The Saturn's five-character
-    // field started at 0x84 (USA) / 0x68 (JPN); the start moves left by one and
-    // a half glyphs to keep the same centre.
+    // side bearing, so a space reads as a wide gap. The clock is centred on
+    // the Saturn's five-character field, 0x84 + 2.5 glyphs of 8 = x 152 - the
+    // same screen in both releases. The JPN font's glyphs are 14 wide, so its
+    // start is 152 - 4 * 14 = 96 (the USA one 152 - 4 * 8 = 120). 0x68 is NOT
+    // a JPN start for this field: it is Biohazard.exe's start for its own
+    // eight-character countdown (GameLoop.cpp), and offsetting it by the USA
+    // field's 1.5 glyphs left the JPN clock 13 pixels left of centre.
     const char kPrime = 94, kDoublePrime = 61;
     const int clockGlyphW = (GetAssetVersion() != 0) ? 14 : 8;
+    const int clockMidX = 0x84 + 5 * 8 / 2;
     const int centis = ((frames % 60) * 100 + 30) / 60;       // 0..98, rounded
     sprintf(PRINT_TEXT_BUFFER, "%02d%c%02d%c%02d", frames / 3600, kPrime,
             (frames / 60) % 60, kDoublePrime, centis);
-    PrintText8x14((short)(((GetAssetVersion() != 0) ? 0x68 : 0x84) - clockGlyphW - clockGlyphW / 2),
-                  0x20, 1, 0);
+    PrintText8x14((short)(clockMidX - 8 * clockGlyphW / 2), 0x20, 1, 0);
 
     if (s_battle.state == 1) {
         const int glyphWidth = (GetAssetVersion() != 0) ? 14 : 8;

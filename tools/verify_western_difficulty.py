@@ -13,6 +13,10 @@ for the overlay checks.
      state, differs from the first-playthrough table (0x004bb698) in 71 records,
      and is byte-identical in all five Saturn GAME*.PRG modules (big-endian).
      => no new table is needed; raising SCENARIO_FLAG_SECOND_PLAYTHROUGH selects it.
+     The Japanese Saturn ("Bio Hazard", assets/SATURN_JPN_ISO_CONTENT) is the
+     other way round: all five of its GAME*.PRG hold the PC's FIRST-playthrough
+     table (Japanese rules), so western_difficulty() is off for Saturn mode on
+     the JPN tree.
   2. The USA stage overlays never call Flg_ck (0x80048ef4): every enemy runs one
      fixed variant, so there is no first-playthrough branch to port.
   3. Zombie bite: the only table in the USA overlays is the PC's HARD row
@@ -73,6 +77,33 @@ def weapon_tables():
                                 for i in range(N))
         check("Saturn %s table == PS1 USA" % os.path.basename(prg), same,
               "@ file 0x%x" % (pos - 240) if pos >= 0 else "(not found)")
+
+    # The Japanese Saturn: same record layout, located by the coordinates (the
+    # first three halfwords), which both difficulty tables share.
+    jpn = sorted(glob.glob("assets/SATURN_JPN_ISO_CONTENT/GAME*.PRG"))
+    if not jpn:
+        print("  [skip] no assets/SATURN_JPN_ISO_CONTENT (saturn_iso.py --jpn extract)")
+    for prg in jpn:
+        d = open(prg, "rb").read()
+        start = 0
+        while True:
+            pos = d.find(be(recs[0])[:6], start)
+            if pos < 0 or all(d[pos + 12 * i:pos + 12 * i + 6] == be(recs[i])[:6]
+                              for i in range(3)):
+                break
+            start = pos + 2
+        if pos < 0:
+            check("JPN Saturn %s table found" % os.path.basename(prg), False)
+            continue
+        rows = [struct.unpack(">3hh4B", d[pos + 12 * i:pos + 12 * i + 12]) for i in range(N)]
+        d_first = sum(1 for i in range(N) if rows[i][3] != first[i][3] or rows[i][6] != first[i][6])
+        d_second = sum(1 for i in range(N) if rows[i][3] != second[i][0] or rows[i][6] != second[i][2])
+        check("JPN Saturn %s table == PC first playthrough" % os.path.basename(prg),
+              d_first == 0 and d_second == 71,
+              "(%d differ from first, %d from second)" % (d_first, d_second))
+    src = open(os.path.join("src", "Globals.h"), encoding="utf-8").read()
+    check("western_difficulty() leaves the JPN Saturn out",
+          "(g_bSaturnMode && GetAssetVersion() == 0)" in src)
 
 
 def overlays():

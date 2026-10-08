@@ -207,6 +207,14 @@ static void ComposeAssetRoot(void)
 // the base tree is ".\usa\" / "./assets/USA/".
 static void ComposeModeRoot(const char* mode, char* out, size_t outSize)
 {
+    // Port-only: the Japanese Saturn release ("Bio Hazard") has its own overlay
+    // folder. Its rooms carry Japanese text in the Biohazard.exe encoding, which
+    // only reads right against the JPN tree's data\FONT.TIM, so with that tree
+    // selected the SATURN mode reads SATURN_JPN - the folder the asset migrator
+    // writes that disc to - and the USA Saturn overlay is never mixed with it.
+    if (s_assetIsJpn && _stricmp(mode, "SATURN") == 0) {
+        mode = "SATURN_JPN";
+    }
     if (s_base[0] != '\0') {
         sprintf_s(out, outSize, "%s%c%s%c", s_base, PATH_SEP, mode, PATH_SEP);
     } else {
@@ -340,6 +348,8 @@ void SetAssetVersion(const char* version)
         s_assetIsJpn = 0;
     }
     ComposeAssetRoot();
+    // The SATURN overlay's folder depends on the region (ComposeModeRoot).
+    ComposeOverlayRoot();
 }
 
 const char* GetAssetRoot(void)

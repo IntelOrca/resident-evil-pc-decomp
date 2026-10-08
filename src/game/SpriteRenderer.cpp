@@ -6,6 +6,7 @@
 #include "../marni/MarniBits.h"
 #include "TmdRenderer.h"
 #include <cstdio>
+#include <cstring>
 #include <algorithm>
 #include <cstdlib>
 #include <cmath>
@@ -54,6 +55,32 @@ int GetTextureVariant(unsigned int textureFlags) {
         return (int)((textureFlags & TEXDESC_VARIANT_MASK) >> 28) + 1;
     }
     return 0;
+}
+
+// Port-only: the draw callbacks type-13 commands index (see AddSpriteCallback).
+// A command keeps a table index rather than the pointer itself so the entry's
+// layout stays the original's.
+#define SPRITE_CALLBACK_MAX 4
+static SpriteDrawCallback s_spriteCallbacks[SPRITE_CALLBACK_MAX];
+
+int AddSpriteCallback(SpriteDrawCallback fn, unsigned int depthSort)
+{
+    if (fn == NULL || g_SpriteQueueCount >= MAX_SPRITE_COMMANDS) return 0;
+    unsigned int slot = 0;
+    while (slot < SPRITE_CALLBACK_MAX && s_spriteCallbacks[slot] != NULL &&
+           s_spriteCallbacks[slot] != fn) {
+        slot++;
+    }
+    if (slot >= SPRITE_CALLBACK_MAX) return 0;
+    s_spriteCallbacks[slot] = fn;
+
+    TextureDraw* cmd = &g_SpriteCommandBuffer[g_SpriteQueueCount++];
+    memset(cmd, 0, sizeof(*cmd));
+    cmd->type = SPRITE_TYPE_CALLBACK;
+    cmd->depthSort = depthSort;
+    cmd->extraFlags = slot;
+    cmd->sortClass = SPRITE_CLASS_NORMAL;
+    return 1;
 }
 
 // ============================================================================
@@ -137,6 +164,11 @@ void FlushSpriteCommandsRange(unsigned int minDepth, unsigned int maxDepth,
             if (ca > 255) ca = 255; if (ca < 0) ca = 0;
             DWORD color = ((DWORD)ca << 24) | ((DWORD)cr << 16) | ((DWORD)cg << 8) | (DWORD)cb;
             MarniDrawLine(sx0, sy0, sx1, sy1, 1.0f, color);
+            continue;
+        }
+        if (cmd->type == SPRITE_TYPE_CALLBACK) {
+            if (cmd->extraFlags < SPRITE_CALLBACK_MAX && s_spriteCallbacks[cmd->extraFlags])
+                s_spriteCallbacks[cmd->extraFlags](scaleX, scaleY);
             continue;
         }
         if (cmd->type == 12) {

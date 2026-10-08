@@ -128,6 +128,19 @@ Builds the `SATURN/` overlay from a Resident Evil **Sega Saturn** disc image
 the Saturn release adds is written; everything else falls back to the base
 tree, which is never written to.
 
+**The Japanese disc ("Bio Hazard")** - often a cooked `MODE1/2048` `.iso` - is
+detected from its `GAME5.PRG` (where the wardrobe questions sit,
+`saturnRegionFromGame5`) and written to **`SATURN_JPN/`** instead, which the game
+reads in place of `SATURN/` with `[Assets] Version=JPN` (its room text is in the
+PC `Biohazard.exe` encoding). Same file set, with three differences: the
+wardrobe patch writes the Japanese questions, the results screens copy
+`Data/BATTLE.BIN` + `Data/RANKING.PRG` (the Japanese labels and prompts are
+inside `BATTLE.BIN`; `RANKING.PRG` carries the rotating "BIO HAZARD" logo
+model) - the disc has no `WAPON3.BIN` - and `--all-rooms` decodes the Japanese
+rooms. See `docs/SATURN_VERSION_ANALYSIS.md` §6b.
+`re1am_selftest saturn <iso> <target>` runs it headlessly;
+`re1am_selftest satwardrobe IN OUT jpn` runs the Japanese wardrobe patch alone.
+
 Everything below up to "Optional" is **always migrated** - the port's Saturn mode
 needs all of it, so there is no switch. The tab offers exactly two optional
 migrations (all rooms and backgrounds; all campaign BGM) and the audio format and

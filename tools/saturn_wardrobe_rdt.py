@@ -37,9 +37,15 @@ message blocks stay where they were, unreferenced.
 The asset migrator does the same in C++ (core/SaturnWardrobe.cpp); `check`
 compares the two.
 
+The Japanese disc ("Bio Hazard") gets its own three questions (GAME5
+0x0609EAB7 / 0x0609EAE2 / 0x0609EB0D) and its rooms keep their Japanese
+messages 0-2; everything else is the same patch. The migrator writes that disc
+to SATURN_JPN.
+
 Usage:
-    saturn_wardrobe_rdt.py patch IN.RDT OUT.RDT
+    saturn_wardrobe_rdt.py patch IN.RDT OUT.RDT [jpn]
     saturn_wardrobe_rdt.py check [ROOT]     # ROOT defaults to assets/SATURN
+    saturn_wardrobe_rdt.py check --jpn [ROOT]   # assets/SATURN_JPN, JPN disc
 """
 
 import os
@@ -60,7 +66,39 @@ SAT_C2 = bytes.fromhex(  # "This fits perfectly.   / Will you change your outfit
     "02 30 44 45 4f 00 42 45 50 4f 00 4c 41 4e 42 41 3f 50 48 55 79 00 00 00 03"
     " 00 33 45 48 48 00 55 4b 51 00 3f 44 3d 4a 43 41 00 55 4b 51 4e 02 4b 51 50"
     " 42 45 50 1b")
+# The Japanese disc's (Bio Hazard GAME5 0x0609EAB7 / 0x0609EAE2 / 0x0609EB0D),
+# in the PC Biohazard.exe encoding, without their `02 08 02 0A 04 01 00` tail -
+# one line break more than the USA's, dropped so the question ends at its '?'
+# like the room's own yes/no (message 1).
+SAT_JPN_C0 = bytes.fromhex(  # "とてもカッコイイコスチュームがある / コスチュームチェンジしますか?"
+    "02 6a 69 79 ac f6 b0 a8 a8 b0 b3 b7 f4 3b c7 85 57 7f 00 03 00 b0 b3 b7 f4"
+    " 3b c7 b7 f1 d4 db 62 75 63 5c 1b")
+SAT_JPN_C1 = bytes.fromhex(  # " みたことのあるコスチュームがある / コスチュームチェンジしますか?"
+    "02 00 76 66 60 6a 6f 57 7f b0 b3 b7 f4 3b c7 85 57 7f 00 03 00 b0 b3 b7 f4"
+    " 3b c7 b7 f1 d4 db 62 75 63 5c 1b")
+SAT_JPN_C2 = bytes.fromhex(  # "  サイズのピッタリなものがある / コスチュームチェンジしますか?"
+    "02 00 00 b1 a8 dc 6f ea f6 b6 ce 6b 79 6f 85 57 7f 00 03 00 b0 b3 b7 f4 3b"
+    " c7 b7 f1 d4 db 62 75 63 5c 1b")
+QUESTIONS = {
+    'USA': (SAT_C0, SAT_C1, SAT_C2),
+    'JPN': (SAT_JPN_C0, SAT_JPN_C1, SAT_JPN_C2),
+}
+# Where each release's GAME5.PRG (base 0x0602B000) keeps them, and their tail.
+GAME5_QUESTIONS = {
+    'USA': (0x0609E8BC, bytes.fromhex("08 02 0A 04 01 00")),
+    'JPN': (0x0609EAB7, bytes.fromhex("02 08 02 0A 04 01 00")),
+}
 ROOM_YESNO_TAIL = bytes.fromhex("08 00 01 01")
+
+
+def region_of_game5(game5):
+    """'USA' / 'JPN' from where the questions sit, as the migrator decides."""
+    for region, (addr, tail) in GAME5_QUESTIONS.items():
+        off = addr - 0x0602B000
+        want = b''.join(q + tail for q in QUESTIONS[region])
+        if game5[off:off + len(want)] == want:
+            return region
+    return None
 
 FLAG_OUTFIT_1 = 0x70   # 112, g_ScenarioFlags (SCD bank 0)
 FLAG_OUTFIT_2 = 0x71   # 113
@@ -127,7 +165,7 @@ def wardrobe_event(model_byte, wearing_conds, wear_ops, offer_msg, back_msg):
     return run_scd(ask) + wait + run_scd(apply_) + b'\x00\xff'
 
 
-def patch(d):
+def patch(d, region='USA'):
     d = bytearray(d)
     hdr = list(struct.unpack_from('<19I', d, 0x48))
 
@@ -176,7 +214,7 @@ def patch(d):
     msgs = [bytes(d[mb + bounds[i]:mb + bounds[i + 1]]) for i in range(count)]
     if count != 3:
         raise ValueError("expected 3 room messages, found %d" % count)
-    msgs += [SAT_C0 + ROOM_YESNO_TAIL, SAT_C1 + ROOM_YESNO_TAIL, SAT_C2 + ROOM_YESNO_TAIL]
+    msgs += [q + ROOM_YESNO_TAIL for q in QUESTIONS[region]]
 
     def pad4(b):
         return b + b'\x00' * (-len(b) % 4)
@@ -235,13 +273,27 @@ def patch(d):
 
 def main(argv):
     if len(argv) >= 4 and argv[1] == 'patch':
-        out = patch(open(argv[2], 'rb').read())
+        region = 'JPN' if len(argv) > 4 and argv[4].lower() == 'jpn' else 'USA'
+        out = patch(open(argv[2], 'rb').read(), region)
         open(argv[3], 'wb').write(out)
         print("%s -> %s (%d bytes)" % (argv[2], argv[3], len(out)))
         return 0
     if len(argv) >= 2 and argv[1] == 'check':
-        root = argv[2] if len(argv) > 2 else os.path.join('assets', 'SATURN')
-        disc = os.path.join('assets', 'SATURN_ISO_CONTENT')
+        args = argv[2:]
+        region = 'USA'
+        if '--jpn' in args:
+            args.remove('--jpn')
+            region = 'JPN'
+        root = args[0] if args else os.path.join(
+            'assets', 'SATURN_JPN' if region == 'JPN' else 'SATURN')
+        disc = os.path.join('assets', 'SATURN_JPN_ISO_CONTENT' if region == 'JPN'
+                            else 'SATURN_ISO_CONTENT')
+        game5 = os.path.join(disc, 'GAME5.PRG')
+        if os.path.exists(game5):
+            found = region_of_game5(open(game5, 'rb').read())
+            print("%s: %s questions" % (game5, found or "NEITHER release's"))
+            if found != region:
+                return 1
         bad = 0
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import saturn_room
@@ -254,7 +306,7 @@ def main(argv):
                     print("MISSING %s" % have)
                     bad += 1
                     continue
-                want = patch(saturn_room.decode_rdt(src))
+                want = patch(saturn_room.decode_rdt(src), region)
                 got = open(have, 'rb').read()
                 # the migrator also relabels TIM transparency; compare the
                 # script-bearing ranges and the header, which that never touches

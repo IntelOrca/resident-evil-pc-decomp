@@ -102,9 +102,13 @@ SaturnAssetsTab::SaturnAssetsTab(QWidget* parent) : QWidget(parent) {
 
     auto* note = new QLabel(
             tr("Builds the Saturn overlay (<target>/SATURN) from a Resident Evil "
-               "Sega Saturn disc image: the track-1 .bin or its .cue. Only the "
-               "content the Saturn release adds is written; everything else falls "
-               "back to the base tree, which is never written to.\n\n"
+               "Sega Saturn disc image: the track-1 .bin, its .cue or a 2048-byte "
+               ".iso. The Japanese \"Bio Hazard\" disc is detected and goes to "
+               "<target>/SATURN_JPN instead: Japanese text, item labels and the "
+               "results screens' BIO HAZARD logo, read by the game with [Assets] "
+               "Version=JPN. Only the content the Saturn release adds is written; "
+               "everything else falls back to the base tree, which is never "
+               "written to.\n\n"
                "Always migrated: the Saturn-only creatures (the Tick, Zombie "
                "Wesker), the Saturn-only alternate outfits, the Battle Game "
                "arenas, the Laboratory Tyrant room (its re-drawn backgrounds and "

@@ -71,6 +71,8 @@ ARENA_TABLE_ADDR = 0x06092B5E
 ARENA_SPAWN_ADDR = 0x060958A8
 # GAME5, the global message table: the Battle Game's opening message.
 BATTLE_MSG_ADDR = 0x0609E979
+# The same message on the Japanese disc (Bio Hazard GAME5.PRG), past its \s\x03.
+JPN_BATTLE_MSG_ADDR = 0x0609EB3A
 # GAME5, one byte per room: bit 0 = "this arena has enemies".
 FIGHT_TABLE_ADDR = 0x060959A0
 # GAME5, STAGE8's BGM group and room BGM state, one byte per room each.
@@ -949,6 +951,61 @@ def check_start_message(saturn_src):
         check(port.endswith(BS + 'dT'), 'and it ends in the auto-dismiss form')
         check(re.search(r'\(unsigned char\*\)s_gm63\.bytes,\s*//\s*\[63\]', globals_src)
               is not None, 'and it sits in global_messages[63]')
+        check_start_message_jpn(src, port)
+
+
+def check_start_message_jpn(src, usa_port):
+    """The JPN twin of the opening message (global_messages_jpn[63]).
+
+    The Japanese Saturn disc keeps the English sentence, but in the JPN font's
+    encoding (Bio Hazard GAME5.PRG 0x0609EB37: `04 03 00`, then the text, whose
+    '.' is F8 1C rather than the USA's 0x79). The JPN build reads its global
+    messages from global_messages_jpn, so without its own [63] a JPN Battle Game
+    would show a NULL message.
+    """
+    jtt = open(os.path.join(REPO, 'src', 'game', 'JpnTextTables.cpp'),
+               encoding='utf-8-sig', errors='replace').read()
+    m = re.search(r's_gmjp_sat63\s*=\s*STR_JP\(u8"((?:[^"\\]|\\.)*)"\)', jtt)
+    if not check(m is not None, 'read s_gmjp_sat63 from JpnTextTables.cpp'):
+        return
+    # STR_JP takes only the raw \d\xNN delay form: a plain operand is not
+    # consumed, so `\dT` printed a 'T' and never dismissed (play-test,
+    # 2026-10-08). 0x30 is what the USA STR encodes 'T' to.
+    BS = '\\\\'
+    check(m.group(1) == usa_port.replace(BS + 'dT', BS + 'd' + BS + 'x30'),
+          'the JPN entry spells the USA s_gm63 text, its \\dT delay as \\d\\x30')
+    check(re.search(r'\\\\d(?!\\\\x[0-9A-Fa-f]{2})', jtt) is None,
+          'no STR_JP in JpnTextTables.cpp uses a \\d delay STR_JP cannot read')
+    check(re.search(r'\(unsigned char\*\)s_gmjp_sat63\.bytes,\s*//\s*\[ 63\]', jtt)
+          is not None, 'and it sits in global_messages_jpn[63]')
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import jpn_msg_decode
+        import saturn_iso
+    except ImportError as e:
+        skips.append('jpn_msg_decode.py / saturn_iso.py (%s)' % e)
+        return
+    if not os.path.isfile(os.path.join(REPO, saturn_iso.TRACK_JPN)):
+        skips.append(saturn_iso.TRACK_JPN)
+        print('  SKIP no JPN Saturn image, the JPN message not compared')
+        return
+    cwd = os.getcwd()
+    os.chdir(REPO)
+    try:
+        game5 = saturn_iso.Iso(saturn_iso.TRACK_JPN).get('/GAME5.PRG')
+    finally:
+        os.chdir(cwd)
+    # The JPN '.' is two bytes, so the disc pads with one space fewer: the
+    # string keeps the USA one's length.
+    body = jpn_msg_decode.encode(src.rstrip(' ') + '  ')
+    off = JPN_BATTLE_MSG_ADDR - PRG_BASE
+    if game5[off - 3:off] + game5[off:off + len(body)] == b'\x04\x03\x00' + body:
+        ok('the JPN encoding of the Saturn text is the %d bytes at JPN GAME5.PRG 0x%08X'
+           % (len(body), JPN_BATTLE_MSG_ADDR))
+    else:
+        fail('the JPN encoding does not match JPN GAME5.PRG 0x%08X' % JPN_BATTLE_MSG_ADDR)
+        print('       port  : %s' % body.hex(' '))
+        print('       saturn: %s' % game5[off:off + len(body)].hex(' '))
 
 
 def check_arena_sequence(saturn_src):
@@ -1400,6 +1457,85 @@ def check_battle_music(saturn_src):
               '%s is gated on g_bSaturnMode && g_saturnBattleActive' % fn)
 
 
+JPN_MODULES = os.path.join(REPO, 'assets', 'SATURN_JPN_ISO_CONTENT')
+JPN_LOGO_DRAW = 0x0602D2E4      # Bio Hazard RANKING.PRG
+USA_LOGO_DRAW = 0x0602D33C      # the USA module's copy, never called
+
+
+def be32_hits(data, value):
+    """Every 2-aligned big-endian dword equal to `value` (literal-pool slots)."""
+    key = struct.pack('>I', value)
+    return [i for i in range(0, len(data) - 3, 2) if data[i:i + 4] == key]
+
+
+def check_jpn_results(saturn_src):
+    """The Japanese release's results screens: its labels, prompts and logo.
+
+    Bio Hazard's RANKING.PRG loads no WAPON3.BIN / SAVE2.BIN - it uploads the
+    labels and prompts BATTLE.BIN carries itself (+0x35000, +0x31EB0), which the
+    USA module overwrote - and draws a 3D "BIO HAZARD" from an SGL model inside
+    the module. Both modules hold the model; only the Japanese one calls the
+    draw. The port gates all three on the JPN tree, which is also what makes it
+    read SATURN_JPN.
+    """
+    print('JPN results screens (Bio Hazard RANKING.PRG / BATTLE.BIN)')
+    for name, want in (('SAT_JPN_LABELS_OFF', 0x35000), ('SAT_JPN_PROMPT_OFF', 0x31EB0),
+                       ('SAT_JPN_PROMPT_PAL_OFF', 0x32EB0), ('SAT_LOGO_ROOT_JPN', 0x0603C18C)):
+        m = re.search(r'#define\s+%s\s+(0x[0-9A-Fa-f]+)u?' % name, saturn_src)
+        check(m is not None and int(m.group(1), 16) == want, '%s = 0x%X' % (name, want))
+    overlay = open(os.path.join(REPO, 'tools', 'asset_migrator', 'src', 'core',
+                                'SaturnOverlay.cpp'), encoding='utf-8').read()
+    jf = re.search(r'jpnFiles\[\]\s*=\s*\{([^}]*)\}', overlay)
+    check(jf is not None and '"RANKING.PRG"' in jf.group(1) and 'WAPON3' not in jf.group(1),
+          'the migrator copies RANKING.PRG (the logo) and no WAPON3.BIN for the JPN disc')
+    asset = open(os.path.join(REPO, 'src', 'system', 'AssetPath.cpp'), encoding='utf-8').read()
+    check('"SATURN_JPN"' in asset and 's_assetIsJpn && _stricmp(mode, "SATURN")' in asset,
+          'the SATURN mode reads SATURN_JPN on the JPN tree')
+
+    rk_jpn = os.path.join(JPN_MODULES, 'RANKING.PRG')
+    rk_usa = module_path('RANKING.PRG')
+    bat = os.path.join(JPN_MODULES, 'BATTLE.BIN')
+    if not (os.path.isfile(rk_jpn) and os.path.isfile(bat)):
+        skips.append('assets/SATURN_JPN_ISO_CONTENT (python tools/saturn_iso.py --jpn extract ...)')
+        print('  SKIP no extracted JPN disc, the module and BATTLE.BIN not compared')
+        return
+    jpn = open(rk_jpn, 'rb').read()
+    m = re.search(r'#define\s+SAT_PRG_SIZE_JPN\s+(\d+)', saturn_src)
+    check(m is not None and int(m.group(1)) == len(jpn),
+          'SAT_PRG_SIZE_JPN is the JPN module\'s size (%d)' % len(jpn))
+    check(b'WAPON3.BIN' not in jpn and b'SAVE2.BIN' not in jpn and b'BATTLE.BIN' in jpn,
+          'the JPN module names BATTLE.BIN and neither WAPON3.BIN nor SAVE2.BIN')
+    check(len(be32_hits(jpn, JPN_LOGO_DRAW)) == 7,
+          'JPN RANKING calls the logo draw 0x%08X from 7 places' % JPN_LOGO_DRAW)
+    if rk_usa:
+        usa = open(rk_usa, 'rb').read()
+        check(len(be32_hits(usa, USA_LOGO_DRAW)) == 0,
+              'the USA module never calls its copy (0x%08X)' % USA_LOGO_DRAW)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import saturn_ranking_logo
+    region, parts = saturn_ranking_logo.load(rk_jpn)
+    check(region == 'JPN' and len(parts) == 9 and sum(len(q) for _, q in parts) == 406,
+          'the logo: 9 parts, 406 polygons (tools/saturn_ranking_logo.py)')
+    b = open(bat, 'rb').read()
+    lab = b[0x35000:]
+    check(lab[:16] == b'X68 SSCONV v0.00' and
+          struct.unpack_from('>2I', lab, 0x20) == (0x28, 0x18A8),
+          'BATTLE.BIN +0x35000 has WAPON3.BIN\'s layout (cells +0x28, palette +0x18A8)')
+    # The prompts: four 128x16 rows, the YES / NO letters where the port cuts them.
+    pix = []
+    for v in b[0x31EB0:0x32EB0]:
+        pix += [v >> 4, v & 15]
+
+    def span(row):
+        xs = [x for y in range(row * 16, row * 16 + 16) for x in range(128) if pix[y * 128 + x]]
+        return min(xs), max(xs)
+    check(span(2) == (38, 81) and span(3) == (46, 74),
+          'the YES / NO letters span u 38..81 / 46..74 of their rows')
+    check('sat_draw(0, 38, SAT_PROMPT_V + 32, 44,' in saturn_src and
+          'sat_draw(0, 46, SAT_PROMPT_V + 48, 29,' in saturn_src,
+          'and the port cuts them there')
+
+
 def main():
     if not os.path.isfile(SATURN_SRC):
         print('no %s' % SATURN_SRC, file=sys.stderr)
@@ -1425,6 +1561,7 @@ def main():
     check_battle_cdp()
     check_battle_music(saturn_src)
     check_arena_rooms()
+    check_jpn_results(saturn_src)
 
     print()
     for s in skips:

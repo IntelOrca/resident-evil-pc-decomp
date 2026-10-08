@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read the Sega Saturn track-1 image (MODE1/2352) as an ISO9660 filesystem.
+"""Read a Sega Saturn track-1 image as an ISO9660 filesystem.
 
 The Saturn disc of "Resident Evil" (USA) is a plain MODE1/2352 track; sector 0
 is IP.BIN, sector 16 the ISO9660 Primary Volume Descriptor (system id
@@ -7,6 +7,11 @@ is IP.BIN, sector 16 the ISO9660 Primary Volume Descriptor (system id
 a sector is sync / header / ECC and is discarded, so this is a normal ISO read
 with a 16-byte offset - no Saturn-specific container involved.
 
+The Japanese "Bio Hazard" disc (`--jpn`) is a cooked MODE1/2048 .iso
+(volume id "BIOHAZARD"); the sector layout is detected from where the
+"CD001" signature of the PVD sits, so either image (or `--track PATH`) works.
+
+    python tools/saturn_iso.py [--jpn | --track PATH] <command> ...
     python tools/saturn_iso.py list
     python tools/saturn_iso.py tree
     python tools/saturn_iso.py info <path>
@@ -26,6 +31,18 @@ BLOCK = USER_SIZE
 TRACK = os.path.join(
     "assets", "Resident Evil - Saturn (USA)",
     "Resident Evil (USA) (Track 1).bin")
+TRACK_JPN = os.path.join(
+    "assets", "Bio Hazard (J)(Saturn)",
+    "Bio Hazard (J) T01 Mode1 2048.iso")
+
+
+def detect_layout(f):
+    """(sector size, user-data offset) of an image: 2048/0, 2352/16 or 2352/24."""
+    for sector, offset in ((2048, 0), (2352, 16), (2352, 24)):
+        f.seek(16 * sector + offset + 1)
+        if f.read(5) == b"CD001":
+            return sector, offset
+    raise ValueError("no ISO9660 PVD at sector 16")
 
 
 def path_key(p):
@@ -39,8 +56,9 @@ class Iso:
     def __init__(self, track=TRACK):
         self.path = track
         self.f = open(track, "rb")
+        self.sector, self.user_offset = detect_layout(self.f)
         n = os.path.getsize(track)
-        self.sectors = n // SECTOR
+        self.sectors = n // self.sector
         self.pvd = self.read_lba(16)
         self.volsize = struct.unpack_from("<I", self.pvd, 80)[0]
         self.volid = self.pvd[40:72].decode("latin1").rstrip()
@@ -52,13 +70,13 @@ class Iso:
     # -- raw -----------------------------------------------------------------
     def read_lba(self, lba, count=1):
         out = []
-        self.f.seek(lba * SECTOR)
+        self.f.seek(lba * self.sector)
         for _ in range(count):
-            b = self.f.read(SECTOR)
-            if len(b) < SECTOR:
+            b = self.f.read(self.sector)
+            if len(b) < self.sector:
                 out.append(b"")
                 continue
-            out.append(b[USER_OFFSET:USER_OFFSET + USER_SIZE])
+            out.append(b[self.user_offset:self.user_offset + USER_SIZE])
         return out if count > 1 else out[0]
 
     def read_file(self, lba, size):
@@ -154,7 +172,7 @@ def cmd_info(iso, args):
     name, lba, size, flags = e
     print("path : %s" % args[0])
     print("name : %s" % name)
-    print("lba  : %d  (byte %d)" % (lba, lba * SECTOR))
+    print("lba  : %d  (byte %d)" % (lba, lba * iso.sector))
     print("size : %d" % size)
     print("dir  : %s" % bool(flags & 0x02))
     return 0
@@ -193,20 +211,30 @@ def cmd_extract(iso, args):
 
 
 def main(argv):
-    if not os.path.exists(TRACK):
-        print("missing %s" % TRACK)
+    argv = list(argv)
+    track = TRACK
+    if "--jpn" in argv:
+        argv.remove("--jpn")
+        track = TRACK_JPN
+    if "--track" in argv:
+        i = argv.index("--track")
+        track = argv[i + 1]
+        del argv[i:i + 2]
+    if not os.path.exists(track):
+        print("missing %s" % track)
         return 1
     if len(argv) < 2:
         print(__doc__)
         return 1
-    iso = Iso(argv[2] if len(argv) > 2 and argv[1] == "info" else TRACK)
+    iso = Iso(track)
     cmd = argv[1]
     args = argv[2:]
     if cmd == "info" and not args:
         print("volume id : %s" % iso.volid)
         print("system id : %s" % iso.sysid)
         print("blocks    : %d (%d bytes)" % (iso.volsize, iso.volsize * BLOCK))
-        print("sectors   : %d in track 1" % iso.sectors)
+        print("sectors   : %d in track 1 (%d bytes, user data at +%d)"
+              % (iso.sectors, iso.sector, iso.user_offset))
         print("set size  : %d" % iso.set_size)
         print("entries   : %d" % len(iso._list))
         print("folders   : %d" % len(iso.folders()))

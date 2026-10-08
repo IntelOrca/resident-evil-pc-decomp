@@ -21,7 +21,7 @@
 //                     [--ogg-q N] [--ffmpeg <path>] [--no-verify]
 //   re1am_selftest satcdp <BATTLE.CDP> [segment-outdir]
 //   re1am_selftest satemd <saturn.EMD> <out.EMD>
-//   re1am_selftest satwardrobe <decoded ROOM11Cv.RDT> <out.RDT>
+//   re1am_selftest satwardrobe <decoded ROOM11Cv.RDT> <out.RDT> [jpn]
 //                     (the wardrobe patch alone; compare with
 //                     tools/saturn_wardrobe_rdt.py patch)
 //   re1am_selftest satsong <SDDRVS.PCK> <music.CDP> <song|all> <out.wav|outdir>
@@ -327,14 +327,14 @@ int cmdSaturn(int argc, char** argv) {
 
 // The wardrobe patch alone, to compare byte-for-byte with
 // `python tools/saturn_wardrobe_rdt.py patch IN OUT`.
-int cmdSatWardrobe(const char* in, const char* out) {
+int cmdSatWardrobe(const char* in, const char* out, bool jpn) {
     std::vector<uint8_t> rdt;
     if (!readFile(in, &rdt)) {
         std::fprintf(stderr, "cannot read %s\n", in);
         return 1;
     }
     std::string why;
-    if (!patchSaturnWardrobeRdt(&rdt, &why)) {
+    if (!patchSaturnWardrobeRdt(&rdt, jpn ? SaturnRegion::Jpn : SaturnRegion::Usa, &why)) {
         std::fprintf(stderr, "%s: %s\n", in, why.c_str());
         return 1;
     }
@@ -959,7 +959,8 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (cmd == "satemd" && argc >= 4) return cmdSatEmd(argv[2], argv[3]);
-    if (cmd == "satwardrobe" && argc >= 4) return cmdSatWardrobe(argv[2], argv[3]);
+    if (cmd == "satwardrobe" && argc >= 4)
+        return cmdSatWardrobe(argv[2], argv[3], argc >= 5 && std::string(argv[4]) == "jpn");
     if (cmd == "satsong" && argc >= 6) return cmdSatSong(argc, argv);
     if (cmd == "satkeys" && argc >= 5) return cmdSatKeys(argv);
     std::printf("unknown or incomplete command\n");

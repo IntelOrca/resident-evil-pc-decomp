@@ -527,14 +527,20 @@ extern int           g_DcDifficulty;           // DC_DIFFICULTY_*
 //     PC's reticle follow, lock-on fire and knife turn are Japanese-release
 //     behaviour); the player rotates by hand;
 //   - an ink ribbon pick-up is 2, not the PC's 3 (every PS1 / Saturn RDT says 2).
-// Always on in the Saturn (campaign and Battle Game) and in the Director's Cut's
-// STANDARD / ADVANCED / ADVANCED* (TRAINING keeps the PC rules); opt-in for the
-// PC release with [Game] WesternDifficulty=1.
+// Always on in the USA Saturn (campaign and Battle Game) and in the Director's
+// Cut's STANDARD / ADVANCED / ADVANCED* (TRAINING keeps the PC rules); opt-in for
+// the PC release with [Game] WesternDifficulty=1.
+//
+// Not for the Japanese Saturn ("Bio Hazard", Saturn mode on the JPN tree): all
+// five of its GAME*.PRG keep the PC's FIRST-playthrough weapon-hit table (200 of
+// 200 records; 71 differ from the western one) - the Japanese rules, like the
+// JPN PC release (docs/WESTERN_DIFFICULTY.md, tools/verify_western_difficulty.py).
 extern bool          g_bWesternDifficultyOption;   // [Game] WesternDifficulty
+extern "C" int       GetAssetVersion(void);        // system/AssetPath.h
 static inline bool western_difficulty(void)
 {
     return g_bWesternDifficultyOption
-        || g_bSaturnMode
+        || (g_bSaturnMode && GetAssetVersion() == 0)
         || (g_bDcMode && g_DcDifficulty != DC_DIFFICULTY_TRAINING);
 }
 

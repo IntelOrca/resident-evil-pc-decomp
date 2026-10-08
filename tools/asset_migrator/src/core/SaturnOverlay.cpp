@@ -1,4 +1,6 @@
-// Saturn overlay builder: <target>/SATURN from a Sega Saturn disc image.
+// Saturn overlay builder: <target>/SATURN from a Sega Saturn disc image, or
+// <target>/SATURN_JPN from the Japanese "Bio Hazard" disc (core/SaturnRegion.h:
+// same file names, Japanese text, the game reads it with [Assets] Version=JPN).
 //
 // Only what the Saturn release adds on top of the PC/PS1 content goes into the
 // overlay; everything else is shared with the base tree:
@@ -237,11 +239,33 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
     if (!img.findInFolder("ENEMY", "EM1016.EMD") ||
         !img.findInFolder("STAGE8", "ROOM8010.RDT")) {
         if (error)
-            *error = "this is not the Resident Evil Saturn disc (no "
+            *error = "this is not the Resident Evil / Bio Hazard Saturn disc (no "
                      "ENEMY/EM1016.EMD or STAGE8/ROOM8010.RDT)";
         return false;
     }
-    const std::string overlay = joinPath(opts.targetRoot, "SATURN");
+    // USA or Japan: the two discs share every file name, so the release is told
+    // apart by its GAME5.PRG - by where the wardrobe questions sit, the very
+    // texts the wardrobe patch below writes (see core/SaturnRegion.h).
+    SaturnRegion region;
+    {
+        const DiscEntry* e = img.find("GAME5.PRG");
+        std::vector<uint8_t> game5;
+        if (!e || !img.readFile(*e, &game5)) {
+            if (error) *error = "cannot read /GAME5.PRG";
+            return false;
+        }
+        if (!saturnRegionFromGame5(game5, &region)) {
+            if (error)
+                *error = "GAME5.PRG is neither the USA nor the Japanese release's "
+                         "(the wardrobe questions are not where either keeps them)";
+            return false;
+        }
+    }
+    progress.info(std::string("disc: ") + saturnRegionName(region));
+    if (region == SaturnRegion::Jpn)
+        progress.info("  Japanese text: the overlay goes to SATURN_JPN and is read with "
+                      "config.ini [Assets] Version=JPN");
+    const std::string overlay = joinPath(opts.targetRoot, saturnOverlayFolder(region));
     if (!makeDirs(overlay)) {
         if (error) *error = "cannot create " + overlay;
         return false;
@@ -491,7 +515,7 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
             // other room, so the two passes write the same art.
             for (const auto& blk : iterTimBlocks(rdt)) foldTimTransparency(&rdt, blk);
             const size_t before = rdt.size();
-            if (!patchSaturnWardrobeRdt(&rdt, &why)) {
+            if (!patchSaturnWardrobeRdt(&rdt, region, &why)) {
                 if (error) *error = std::string(w[1]) + ": " + why;
                 return false;
             }
@@ -514,7 +538,8 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
         }
     }
     if (opts.allRooms) {
-        progress.info("rooms: every campaign room and background (optional) -> SATURN/Stage1..7");
+        progress.info(std::string("rooms: every campaign room and background (optional) -> ") +
+                      saturnOverlayFolder(region) + "/Stage1..7");
         // The Laboratory Tyrant room (stage 5, room 0x13) was written above with
         // the Saturn's omodel patch and its own re-drawn backgrounds; the generic
         // copy must not overwrite it.
@@ -612,10 +637,17 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
         progress.info("music: the Battle Game's own tracks -> rendered from the sequences");
         // The Battle Game's results screens (RANKING.PRG 0x0602B1E4): their
         // background BMP, both fonts and palettes are in /BATTLE.BIN (X68
-        // SSCONV sections at 0x0, 0x10000 BMP, 0x30000, 0x34000) and the
-        // item-name labels in /WAPON3.BIN. The game reads them as they are
-        // (src/game/saturn/SaturnBattle.cpp), so they are copied verbatim.
-        for (const char* name : {"BATTLE.BIN", "WAPON3.BIN"}) {
+        // SSCONV sections at 0x0, 0x10000 BMP, 0x30000, 0x34000, 0x35000). The
+        // USA module then reads /WAPON3.BIN over BATTLE.BIN's +0x35000 (the
+        // Japanese item labels) and /SAVE2.BIN in place of +0x31EB0 (the
+        // Japanese yes/no prompts); the Japanese disc has neither file and uses
+        // BATTLE.BIN's own. The Japanese results also draw the "BIO HAZARD"
+        // logo, an SGL model inside RANKING.PRG itself (0x0603BF54, see
+        // tools/saturn_ranking_logo.py), so that module is copied for it. The
+        // game reads all of these as they are (src/game/saturn/SaturnBattle.cpp).
+        const char* const usaFiles[] = {"BATTLE.BIN", "WAPON3.BIN"};
+        const char* const jpnFiles[] = {"BATTLE.BIN", "RANKING.PRG"};
+        for (const char* name : region == SaturnRegion::Jpn ? jpnFiles : usaFiles) {
             const DiscEntry* e = img.find(name);
             std::vector<uint8_t> d;
             if (!e || !img.readFile(*e, &d)) {

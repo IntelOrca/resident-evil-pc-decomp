@@ -17,10 +17,16 @@
 //   area 5 (faces +z: the other yaw half)
 //       event 3: offers outfit 1 (112 only);  worn -> back to the default
 //
-// The questions are the Saturn's texts byte for byte, as room messages 3-5.
+// The questions are the Saturn's texts byte for byte, as room messages 3-5:
+// the USA disc's English ones (GAME5 0x0609E8BC/8F9/93A) or the Japanese disc's
+// (Bio Hazard GAME5 0x0609EAB7/AE2/B0D), whose encoding is the PC Biohazard.exe
+// one. The rooms themselves come from the same disc, so their own messages 0-2
+// are already in that language.
 // tools/saturn_wardrobe_rdt.py is the reference implementation and `check`s
 // the migrated files against it.
 #pragma once
+
+#include "core/SaturnRegion.h"
 
 #include <cstdint>
 #include <string>
@@ -28,8 +34,15 @@
 
 namespace re1 {
 
+// Which release a disc's GAME5.PRG is, from where its wardrobe questions sit -
+// the texts patchSaturnWardrobeRdt writes. False for anything else, so a disc
+// the patch was not written against is refused rather than given the wrong
+// language.
+bool saturnRegionFromGame5(const std::vector<uint8_t>& game5, SaturnRegion* out);
+
 // Patches a decoded Saturn ROOM11Cv / ROOM61Cv in place. Fails, leaving `rdt`
 // untouched, if the room is not the shape the patch was written against.
-bool patchSaturnWardrobeRdt(std::vector<uint8_t>* rdt, std::string* why);
+bool patchSaturnWardrobeRdt(std::vector<uint8_t>* rdt, SaturnRegion region,
+                            std::string* why);
 
 }  // namespace re1

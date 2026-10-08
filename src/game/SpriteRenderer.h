@@ -205,6 +205,16 @@ int SubmitEffectSprite(TextureDesc* texture, int depth, int textureId,
 int DrawPrim_SpriteLarge(int* params, unsigned short alpha, int tpage,
                          unsigned int u, unsigned int v, unsigned int clut);
 
+// Port-only (type 13): a draw callback that runs at its command's place in the
+// sorted queue, inside the 2D pass (SPRITE_CLASS_NORMAL). For geometry with no
+// counterpart among the original's primitives; the Japanese Saturn's rotating
+// "BIO HAZARD" results logo (saturn/SaturnBattle.cpp) is the one user. `fn`
+// gets the game-space -> backbuffer scale the rest of the pass draws with.
+// Returns 0 when the queue (or the small callback table) is full.
+#define SPRITE_TYPE_CALLBACK 13
+typedef void (*SpriteDrawCallback)(float scaleX, float scaleY);
+int AddSpriteCallback(SpriteDrawCallback fn, unsigned int depthSort);
+
 // ============================================================================
 // The texture slot the room-mask page lives in.
 //
