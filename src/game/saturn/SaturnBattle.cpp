@@ -1766,17 +1766,29 @@ static void battle_draw_score(const BattleResult& r, int jill)
     }
 
     sat_text_b("LIFE", 7, 17, SAT_PAL_CYAN);
-    // The bar: yellow for the HP left, red for the rest.
-    // PORT APPROXIMATION: the Saturn draws it as two VDP1 sprites from
-    // BATTLE.BIN +0x20000 / +0x30000 whose exact size and palette are not read
-    // yet, and it moves up and down; the motion here is a two-pixel bob.
-    const int barW = 132;
-    int fill = r.maxHp > 0 ? r.hp * barW / r.maxHp : 0;
-    if (fill > barW) fill = barW;
-    static const signed char kBob[16] = { 0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 1, 1, 1, 0, 0, 0 };
-    const int bob = kBob[(s_resultsFrame >> 1) & 15];
-    battle_solid(128, 138 + bob, fill, 6, 250, 240, 0, 150);
-    battle_solid(128 + fill, 138 + bob, barW - fill, 6, 230, 30, 0, 150);
+    // The bar (RANKING 0x0602C204): two scaled VDP1 sprites, both anchored by
+    // their lower-right corner (CTRL 0x0F01) at constant coordinates - it does
+    // not move. The art is BATTLE.BIN +0x34000 (palette: yellow, red, black):
+    //   the bar   256x16 at VDP1 0x25C14000, drawn 264x16 with its corner at
+    //             (200, 64), Z 35.0: a 248x14 yellow block and its black
+    //             shadow, 4 right and 2 down
+    //   the loss  8x16 at 0x25C14800, 8x14 of red, drawn `256 - 256 / max * hp`
+    //             wide (a double, truncated; skipped at 0) with its corner at
+    //             (192, 64), Z 34.0 - the yellow's right end, so the red grows
+    //             leftward over it as HP is lost
+    // VDP1 coordinates are from the screen centre and run at twice the text
+    // grid's scale, so everything halves: the yellow is 128x7 at (128, 136).
+    // PORT APPROXIMATION: flat fills in the art's three colours. Both sprites
+    // set SPD, so the Saturn also draws their colour-0 margins (CRAM 0xB0);
+    // those slivers are not reproduced.
+    double lost = r.maxHp > 0 ? 256.0 - 256.0 / r.maxHp * r.hp : 0.0;
+    if (lost < 0.0) lost = 0.0;
+    if (lost > 256.0) lost = 256.0;
+    const int red = (int)lost / 2;
+    battle_solid(128, 136, 128, 7, 248, 232, 0, 151);
+    battle_solid(256, 137, 2, 7, 0, 0, 0, 151);
+    battle_solid(130, 143, 126, 1, 0, 0, 0, 151);
+    if (red > 0) battle_solid(256 - red, 136, red, 7, 248, 0, 0, 150);
 
     sat_text_b("CLEAR TIME", 7, 20, SAT_PAL_CYAN);
     sat_time((unsigned int)r.frames, 28, 20, SAT_PAL_WHITE);

@@ -546,15 +546,15 @@ open; the Battle Game's music is in (below).
      and spray counts are the Saturn's counters (start totals, -1 per shot and
      per heal), not the inventory. Records keep their time in frames (the file
      is now `batrank.dat` "BRN2"; an older file is ignored).
-     **Approximations**: the life bar is solid yellow/red at the Saturn's place
-     with a 2-px bob (its VDP1 sprites are not decoded); the save prompt is
+     **Approximations**: the life bar is flat fills in its art's colours at
+     the Saturn's place and size (it does not move - `0x0602C204` uses
+     constant coordinates); the save prompt is
      spelled in font B (`SAVE2.BIN` not ported); the name alphabet is font B's.
   4. *Music* - `Bgm_5a` starts with the score screen.
 
 Still to do:
 
-1. The life bar's own sprites (BATTLE.BIN +0x20000/+0x30000), SAVE2.BIN's
-   prompt, and the Saturn's title-row art (`TITLE.BIN`).
+1. SAVE2.BIN's prompt and the Saturn's title-row art (`TITLE.BIN`).
 2. The score/ranking screens' exact colours, the name-entry character set and
    the save prompt's wording are not read from `RANKING.PRG` yet.
 3. Other Saturn audio: the campaign BGM arrangement, SE banks, room PCM banks,

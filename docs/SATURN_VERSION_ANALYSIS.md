@@ -1760,7 +1760,19 @@ background and masks.
 |---|---|---|
 | `BATTLE.BIN +0x0000` | X68 SSCONV: font A (16x16, 4 cells/glyph) at `+0x30`, 16 palette rows at `+0x1430`, font B (8x16, 2 cells) at `+0x1630` | VDP2 `0x25E00080`, CRAM `0x200`, VDP2 `0x25E02040` |
 | `BATTLE.BIN +0x10000` | a 320x240 8bpp **Windows BMP** - the blue backdrop; `0x0602B428` converts its BGRA palette to CRAM `0x400` and copies the rows (bottom-up) into VDP2 VRAM B | NBG bitmap |
-| `BATTLE.BIN +0x20000` / `+0x30000` / `+0x34000` | the life bar's two VDP1 sprites and more sprite data (not decoded) | VDP1 |
+| `BATTLE.BIN +0x30000` | X68 SSCONV: the prompt window's gradient art | VDP1 `0x25C10000`, CRAM `0x100` |
+| `BATTLE.BIN +0x34000` | X68 SSCONV: the life bar (256x16: 248x14 yellow + a black shadow 4 right / 2 down) at `+0x30`, its palette (grey-green, red, yellow, black) at `+0x830`, the loss fill (8x16: 8x14 red) at `+0xA30` | VDP1 `0x25C14000`, CRAM `0x160`, VDP1 `0x25C14800` |
+
+**The life bar** (`0x0602C204`) is two scaled sprites with the lower-right zoom
+point (`CTRL 0x0F01`, `PMOD 0xC0`, `COLR 0xB0`) at **constant** coordinates - it
+does not move: the bar, character `0x2800`, corner (200, 64), drawn 264x16,
+Z 35.0; the loss, character `0x2900`, corner (192, 64), drawn
+`256 - 256.0 / max * hp` wide (skipped at 0), Z 34.0 - red growing leftward
+from the yellow's right end. `max` is `0x8C - 44 * (character & 1)`, `hp` the
+word at `0x002FFFA6`. VDP1 coordinates here are from the screen centre at twice
+the text grid's scale (the bar's 264 units are 132 px, beside `LIFE`). The
+`0x00230000` / `0x00220000` in that routine are those Z values, **not**
+`BATTLE.BIN` offsets, which is what an earlier reading took them for.
 | `WAPON3.BIN` | the seven item labels, 14 columns x 2 cells each, + 2 palette rows (normal, dim) | VDP2 `0x25E03000`, CRAM `0x300` |
 | `SAVE2.BIN` | the save prompt art (YES/NO) | VDP1 |
 
@@ -2835,8 +2847,9 @@ So `BATTLE.BIN` was authored for Japan: `+0x35000` is an SSCONV block with
 128×16 rows セーブしますか? / 続けて遊びますか? / YES / NO (VDP1 characters
 `0x2400` / `0x2480` / `0x2500` / `0x2580`, palette `+0x32EB0`, a grey ramp). The
 USA build loaded English files over both. `+0x30030` (7,296 B) is gradient art
-(the prompt window, VDP1 `0x25C10000`) and `+0x34030` the yellow LIFE bar; the
-`+0x20000` block (64 KB) is read only by the bar code (`0x0602C2B0`).
+(the prompt window, VDP1 `0x25C10000`) and `+0x34030` the yellow LIFE bar;
+`+0x20000` is still the backdrop BMP (77,878 B from `+0x10000`), and the
+`0x00220000` in the bar code is a Z, not a pointer into it.
 
 **The "BIO HAZARD" logo.** An SGL object tree inside the module, present in
 **both** (JPN root `0x0603C18C`, XPDATA `0x0603BF54`; USA `0x0603C2EC` /
