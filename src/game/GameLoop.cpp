@@ -53,6 +53,12 @@ int game_loop(void)
         Task_sleep(1);
     }
 
+    // Sega Saturn Battle Game: the run clock starts here, once the opening
+    // message has closed. GAME5's start-up ends with the same wait - it spins
+    // on bit 7 of 0x002F8665, its g_menu_choice_id, at 0x0602CF0A-0x0602CF16 -
+    // and raises the clock bit after it (0x0602CF3C). No-op outside a run.
+    saturn_battle_clock_run(1);
+
     // 0x00480b53: Mark gameplay active
     g_main_state_flags |= MSF_GAMEPLAY_ACTIVE;
 

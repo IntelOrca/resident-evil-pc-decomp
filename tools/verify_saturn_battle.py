@@ -719,6 +719,126 @@ def check_clear_banner(saturn_src):
           'the port prints "STAGE CLEAR!" (font code 62 for the mark)')
 
 
+def check_run_clock(saturn_src):
+    """The run clock: where GAME5 counts it and what stops it.
+
+    The counter (0x002FFFA0, 60ths) is advanced by the per-frame interrupt
+    routine at 0x06036508 - the one that also advances the play timer - and by
+    nothing else, so it runs in the inventory and the item box. Its only gate
+    besides the battle bit is bit 0 of the battle block 0x060A67A0:
+
+        0603659E  D13E 6012 C901 2008 8949   block bit 0 clear -> skip
+        0603662A  D31E 6232 D125 7201        0x002FFFA0 += 1
+
+    and that bit has two setters and three clearers:
+
+        0602CF0A  6030 C980 .... 8BF8   the start-up waits for the message
+        0602CF3E  6012 CB01 2102   set    end of the game's start-up
+        0602EAC8  6012 CB01 2102   set    end of the room transition (0x0602DBBC)
+        0602DBDA  E2FE .... 6312 2329 2132   clear, the transition's first act
+        0602D9EE  E2FE .... 6312 2329 2132   clear, the player's death
+                  (0x0602D9C8, called from 0x0602D950 once 0x0602D8C6 has
+                  seen HP negative)
+        060888BE  E1FE 6282 .... 2219 2822   clear, the arena is cleared
+
+    The port once ticked the clock from the gameplay loop (so it stopped in the
+    menus) and gated it on the state (so it ran through the 120-frame clear
+    pause and the load of the next arena).
+    """
+    print('run clock (GAME5 0x06036508, battle block bit 0)')
+    game5 = module_path('GAME5.PRG')
+    if game5 is None:
+        skips.append('assets/SATURN_ISO_CONTENT/GAME5.PRG')
+        print('  SKIP no GAME5.PRG, the clock code not compared')
+    else:
+        data = open(game5, 'rb').read()
+
+        def words(addr, count):
+            return struct.unpack_from('>%dH' % count, data, addr - PRG_BASE)
+
+        def lit(addr):
+            return struct.unpack_from('>I', data, addr - PRG_BASE)[0]
+
+        check(words(0x0603659E, 5) == (0xD13E, 0x6012, 0xC901, 0x2008, 0x8949)
+              and lit(0x06036698) == 0x060A67A0,
+              'the interrupt routine skips the count while block bit 0 is clear')
+        check(words(0x0603662A, 4) == (0xD31E, 0x6232, 0xD125, 0x7201)
+              and lit(0x060366A4) == 0x002FFFA0 and lit(0x060366C4) == 0x00057E03,
+              'the count is 0x002FFFA0 += 1, capped past 0x57E03')
+        # Every test between the gate and the count branches TO the count: they
+        # only decide whether the m:ss text is redrawn.
+        check(words(0x060365B2, 1) == (0x8B3A,) and words(0x060365BA, 1) == (0x8B36,)
+              and words(0x060365C4, 1) == (0x8F31,) and words(0x060365E6, 1) == (0x8B20,),
+              'the menu/redraw tests all fall through to the count')
+        hits = [a for a in be32_hits(data, 0x002FFFA0)]
+        check(len(hits) == 2,
+              '0x002FFFA0 has two literal slots: the count and the run init')
+        for addr, what in ((0x0602CF3E, "the game's start-up"),
+                           (0x0602EAC8, 'the room transition')):
+            check(words(addr, 3) == (0x6012, 0xCB01, 0x2102),
+                  'bit 0 is set at the end of %s (0x%08X)' % (what, addr))
+        check(words(0x0602CF0A, 2) == (0x6030, 0xC980) and words(0x0602CF16, 1) == (0x8BF8,)
+              and lit(0x0602CF78) == 0x002F8665,
+              "the start-up waits for the opening message (0x002F8665 bit 7) first")
+        check(words(0x0602D8C6, 4) == (0x017D, 0x611F, 0x4111, 0x8904)
+              and words(0x0602D950, 2) == (0xD119, 0x410B)
+              and lit(0x0602D9B8) == 0x0602D9C8,
+              'the game loop calls 0x0602D9C8 once HP is negative')
+        for addr, what in ((0x0602DBDA, 'the room transition starts'),
+                           (0x0602D9EE, 'the player dies')):
+            w = words(addr, 5)
+            check(w[0] == 0xE2FE and w[2:] == (0x6312, 0x2329, 0x2132),
+                  'bit 0 is cleared when %s (0x%08X)' % (what, addr))
+        w = words(0x060888BE, 5)
+        check(w[0] == 0xE1FE and w[1] == 0x6282 and w[3:] == (0x2219, 0x2822),
+              'bit 0 is cleared when the arena is cleared (0x060888BE)')
+
+    check('s_battle.flags &= ~BB_CLOCK;' in saturn_src
+          and re.search(r'BB_CLOCK\s*=\s*0x00000001u', saturn_src) is not None,
+          'the port lowers the clock bit (bit 0) on the arena clear')
+    tick = re.search(r'void saturn_battle_tick_run\(void\)\s*\{(.*?)\n\}',
+                     saturn_src, re.S)
+    check(tick is not None and '(s_battle.flags & BB_CLOCK) == 0' in tick.group(1)
+          and 's_battle.state' not in tick.group(1),
+          'the tick is gated on the clock bit and not on the state')
+    check(tick is not None and 'plat_time_ms()' in tick.group(1)
+          and re.search(r'#define BATTLE_RUN_FRAMES_PER_SEC\s+60\b', saturn_src) is not None,
+          'the clock counts real time in 60ths, not calls')
+    sync = re.search(r'static void battle_sync_arena\(void\)\s*\{(.*?)\n\}',
+                     saturn_src, re.S)
+    check(sync is not None and 'BB_CLOCK' not in
+          re.sub(r'//[^\n]*', '', sync.group(1)),
+          'battle_sync_arena() leaves the clock bit to the room load')
+
+    def src(*rel):
+        return open(os.path.join(REPO, 'src', 'game', *rel),
+                    encoding='utf-8', errors='replace').read()
+
+    main_loop = src('MainLoop.cpp')
+    check(re.search(r'UpdateDemoTimer\(\);.*?saturn_battle_tick_run\(\);.*?'
+                    r'TaskScheduler_Update\(\);', main_loop, re.S) is not None,
+          'main_loop() ticks the clock every frame, ahead of the task pass')
+    door = re.search(r'\nvoid room_transition_load\(void\)\s*\{(.*?)\n\}',
+                     src('DoorSystem.cpp'), re.S)
+    check(door is not None
+          and re.search(r'saturn_battle_clock_run\(0\);.*?room_set\(\);.*?'
+                        r'saturn_battle_clock_run\(1\);\s*$', door.group(1), re.S)
+          is not None,
+          'room_transition_load stops the clock first and restarts it last')
+    check(re.search(r'int game_loop\(void\)\s*\{[^}]*?g_menu_choice_id & 0x80[^}]*?\}'
+                    r'[^{}]*?saturn_battle_clock_run\(1\);', src('GameLoop.cpp'), re.S)
+          is not None and 'saturn_battle_clock_run' not in src('GameStart.cpp'),
+          'the clock starts after the opening message has closed, not at the room load')
+    upd = re.search(r'void saturn_battle_update\(void\)\s*\{(.*?)\n\}', saturn_src, re.S)
+    check(upd is not None and re.search(
+              r'g_playerEntity\.health < 0\)\s*s_battle\.flags &= ~BB_CLOCK;',
+              upd.group(1)) is not None,
+          "the player's death stops the clock on its first frame")
+    check(re.search(r'int saturn_battle_close_run\(void\)\s*\{[^}]*?'
+                    r'saturn_battle_clock_run\(0\);', saturn_src, re.S) is not None,
+          'leaving the game loop stops the clock')
+
+
 def check_arena_arming(saturn_src):
     """The fight-room bit must follow the ROOM, not the transition.
 
@@ -1077,23 +1197,20 @@ def check_arena_sequence(saturn_src):
           'the clear banner is drawn during the 120-frame pause')
     check('s_battleRunFrames = BATTLE_MAX_RUN_FRAMES' in saturn_src,
           'the elapsed frame counter stops at the Saturn 99:59 limit')
-    # The counter is in 60ths (GAME5 0x0603662A, read as n / 3600 minutes) and
-    # the port's gameplay tick is 33 ms, so each tick is two 60ths. Adding one
-    # ran the clock at half speed.
-    check(re.search(r'#define BATTLE_RUN_FRAMES_PER_TICK\s+2\b', saturn_src) is not None
-          and 's_battleRunFrames += BATTLE_RUN_FRAMES_PER_TICK' in saturn_src,
-          'the run clock advances two 60ths per 30 Hz gameplay tick')
+    check_run_clock(saturn_src)
     check_enemy_count_derivation(saturn_src)
     check_arena_arming(saturn_src)
     check_clear_banner(saturn_src)
 
     game_loop = open(os.path.join(REPO, 'src', 'game', 'saturn', 'SaturnTyrant.cpp'),
                      encoding='utf-8', errors='replace').read()
-    check(re.search(r'g_saturnBattleActive\s*\)\s*\{\s*saturn_battle_tick_run\(\);'
+    check(re.search(r'g_saturnBattleActive\s*\)\s*\{'
                     r'\s*saturn_battle_update\(\);.*?saturn_battle_run_finished\(\)\)\s*\{'
                     r'\s*return 1;\s*\}\s*saturn_battle_draw_hud\(\);',
                     game_loop, re.S) is not None,
-          'the game loop ticks, advances, leaves at the run end, and draws the Battle HUD')
+          'the game loop advances, leaves at the run end, and draws the Battle HUD')
+    check('saturn_battle_tick_run' not in game_loop,
+          'the run clock is not ticked from the gameplay loop (it would stop in the menus)')
     real_game_loop = open(os.path.join(REPO, 'src', 'game', 'GameLoop.cpp'),
                           encoding='utf-8', errors='replace').read()
     check(re.search(r'Battle mode has no self-destruct timer\..*?'

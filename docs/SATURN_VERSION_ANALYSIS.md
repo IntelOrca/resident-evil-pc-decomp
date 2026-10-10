@@ -1115,7 +1115,7 @@ owns it), 3 → `0x06088CEC`, 4 → `0x06088D86`. The battle block at
 
 | offset | field |
 |---|---|
-| `+0` | flags: bit 0 cleared on a room clear; bit 1 = fight room (from the per-room table); bit 2 = advance request; bit 3 knife held; bit 4 = **"can still fight"** (see below); bit 5 handgun, 6 shotgun, 7 Python, 8 grenade launcher held |
+| `+0` | flags: bit 0 = **the run clock counts** (see "The run clock" below); bit 1 = fight room (from the per-room table); bit 2 = advance request; bit 3 knife held; bit 4 = **"can still fight"** (see below); bit 5 handgun, 6 shotgun, 7 Python, 8 grenade launcher held |
 | `+4` | state: 0 fighting, 1 cleared, 2 next room, 3-4 end of run |
 | `+6` | arena index (= room) |
 | `+8` | **enemies remaining** (read live: 3 in the Cerberus room). Not the engine's enemy counter: see "How `+8` is maintained" below. |
@@ -1200,6 +1200,30 @@ owns it), 3 → `0x06088CEC`, 4 → `0x06088D86`. The battle block at
   `0x06089D90` into `0x060A169C`/`0x060A169E`), state 3, and a 7-frame
   loop that loads `/SND/BATTLE.CDP` (the string at `0x0608882C`) while
   **`0x060FFC1B` bit 1 holds the display** (§4f).
+
+**The run clock** (`0x002FFFA0`, 60ths, capped at `0x57E04` = 99:59) is not
+counted by the game loop. Its only writer besides the run init is the per-frame
+interrupt routine `0x06036508` (installed as a callback from `0x0602B2B2`,
+`0x0602B4C2`, `0x0602B858`, `0x0602C868`), right after the play timer
+(`0x060AD01C`): with the battle bit up and **block bit 0 set** it adds 1 at
+`0x0603662A`. The tests in between (`0x002F3000 & 0xFF00`, flag `0x4000`,
+`+0xA9A`, `n % 60`) all branch *to* the add; they only decide whether the
+`m:ss` text is redrawn. So the clock **keeps running in the inventory and the
+item box**, and block bit 0 is the one thing that stops it:
+
+| address | bit 0 | when |
+|---|---|---|
+| `0x0602CF3C` | set | the end of the game's start-up: first room loaded **and** the opening message closed (it spins on `0x002F8665` bit 7 at `0x0602CF0A` first) |
+| `0x0602EAC6` | set | the end of the room transition routine `0x0602DBBC` |
+| `0x0602DBDC` | clear | the start of that routine |
+| `0x0602D9F0` | clear | the player's death: `0x0602D9C8`, called by the game loop (`0x0602D950`) on the first frame HP is negative (`0x0602D8C6`) |
+| `0x060888BE` | clear | the arena is cleared (state 0 → 1) |
+
+The clock therefore stops the moment the last enemy falls and stays stopped
+through the 120-frame pause and the load of the next arena, and it also stops
+across the three rest rooms' doors. `verify_saturn_battle.py` ("run clock")
+checks every one of these words. Port: `saturn_battle_tick_run()` is called
+from `main_loop()` and counts real time; `saturn_battle_clock_run()` is the bit.
 
 Settled in §4f: what reaches the results screen is a **score** computed by
 `RANKING` from remaining HP, remaining ammo and clear time; HP is not

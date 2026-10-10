@@ -3,6 +3,7 @@
 // Adapted from Ghidra decompilation
 #include "Globals.h"
 #include "../system/AssetPath.h"
+#include "saturn/SaturnBattle.h"
 
 // 0x00470750 - declared in SpriteRenderer.h; the signature must match that
 // definition exactly (see the stub-overload note on display_room_camera_bg).
@@ -195,6 +196,13 @@ int main_loop(void)
     }
 
     UpdateDemoTimer();
+
+    // Sega Saturn: the Battle Game's run clock. Here, past the FMV and F9
+    // prompt exits and ahead of the task pass, because the Saturn counts it in
+    // its per-frame interrupt routine (GAME5 0x06036508) - under whichever task
+    // owns the screen, the inventory and the item box included. No-op outside a
+    // run.
+    saturn_battle_tick_run();
 
     if ((g_main_state_flags & MSF_PANNING_RESET) != 0) {
         ResetScreenPanning();

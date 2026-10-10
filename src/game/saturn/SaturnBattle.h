@@ -159,8 +159,18 @@ void saturn_battle_update(void);
 // The run clock, in frames (60 to the second), and its per-frame tick. The
 // score's time bonus is against 720 s for Chris and 420 s for Jill, so this is
 // for the whole attempt and not per arena.
+//
+// The tick is main_loop()'s, not the game loop's: the Saturn counts in its
+// per-frame interrupt routine (GAME5 0x06036508), so the clock keeps going in
+// the inventory and the item box. What stops it is bit 0 of the battle block,
+// which saturn_battle_clock_run() writes for the callers outside the Battle
+// code: 1 once a room is loaded (game_loop's entry, after the opening message
+// has closed, and the end of room_transition_load), 0 when a room transition
+// starts. The arena clear, the player's death and the end of the run lower it
+// from inside. No-ops outside a run.
 int  saturn_battle_run_frames(void);
 void saturn_battle_tick_run(void);
+void saturn_battle_clock_run(int run);
 // Draw the run clock and, during state 1, the clear banner. Called once per
 // gameplay frame after saturn_battle_update() so a new clear appears immediately.
 void saturn_battle_draw_hud(void);

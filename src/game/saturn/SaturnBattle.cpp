@@ -418,7 +418,7 @@ struct BattleBlock {
 };
 
 enum {
-    BB_CLEARED    = 0x00000001u,  // +0 bit 0
+    BB_CLOCK      = 0x00000001u,  // +0 bit 0: the run clock counts (see below)
     BB_FIGHT_ROOM = 0x00000002u,  // +0 bit 1, from kArenaHasEnemies
     BB_ADVANCE    = 0x00000004u,  // +0 bit 2
     BB_KNIFE      = 0x00000008u,  // +0 bit 3
@@ -432,6 +432,10 @@ enum {
 static BattleBlock s_battle = { 0, 0, 0, 0, 0, 0 };
 static int s_battleSavedHp   = 0;
 static int s_battleRunFrames = 0;
+// plat_time_ms() of the last saturn_battle_tick_run(), and the milliseconds
+// (x60) not yet turned into a whole 60th.
+static DWORD s_battleClockLastMs = 0;
+static DWORD s_battleClockRemainder = 0;
 // Set once the results screens have been shown; game_loop then leaves the run.
 static unsigned char s_battleFinished = 0;
 
@@ -467,8 +471,12 @@ static constexpr char s_stageClearedHudText[] = "STAGE CLEAR>";
 #define BATTLE_NO_AMMO_GRACE      0xB3
 // GAME5's run-frame counter saturates at 99:59 (0x57E04 frames at 60 fps).
 #define BATTLE_MAX_RUN_FRAMES    0x57E04
-// The run counter is in 60ths of a second; the port's gameplay tick is 1/30 s.
-#define BATTLE_RUN_FRAMES_PER_TICK 2
+// The run counter is in 60ths of a second: one per Saturn vertical blank.
+#define BATTLE_RUN_FRAMES_PER_SEC 60
+// A gap between two main_loop() calls longer than this is the game being held
+// (focus loss, the F9 prompt, a debugger), not game time, and is not counted.
+// A frame is 16 or 33 ms.
+#define BATTLE_CLOCK_MAX_GAP_MS   200
 
 // Re-arm the per-arena half of the block, the one and only writer of
 // BB_FIGHT_ROOM. It runs every frame because the bit is a property of the ROOM,
@@ -497,7 +505,9 @@ static void battle_sync_arena(void)
     s_battle.state         = 0;
     s_battle.timer         = 0;
     s_battle.noAmmoFrames  = 0;
-    s_battle.flags        &= ~(BB_CLEARED | BB_ADVANCE);
+    // BB_CLOCK is not this function's: the room load that brought the arena in
+    // has already raised it (saturn_battle_clock_run).
+    s_battle.flags        &= ~BB_ADVANCE;
     if (kArenaHasEnemies[arena]) s_battle.flags |= BB_FIGHT_ROOM;
     else                        s_battle.flags &= ~BB_FIGHT_ROOM;
 }
@@ -654,6 +664,7 @@ void saturn_battle_begin_run(void)
     s_battle.timer = 0;
     s_battle.noAmmoFrames = 0;
     s_battleRunFrames = 0;
+    s_battleClockRemainder = 0;
     s_battleFinished = 0;
     s_battle.enemiesLeft = battle_enemies_left();
 
@@ -909,13 +920,6 @@ static BattleOrbitCamera s_orbitCam;
 static int  s_orbitTarget[3];
 static int  s_orbitRadius;
 static int  s_orbitAngle;                  // Saturn 16-bit units
-
-// The clock stops with the Tyrant: GAME5 advances 0x002FFFA0 inside its HUD
-// clock draw (0x0603662A), and the end sequence draws no HUD.
-static int battle_clock_running(void)
-{
-    return s_battle.state < 3;
-}
 
 static void battle_begin_finale(void)
 {
@@ -2002,6 +2006,7 @@ static BattleResult s_pendingResult;
 int saturn_battle_close_run(void)
 {
     s_pendingOutcome = BATTLE_OUTCOME_NONE;
+    saturn_battle_clock_run(0);           // GAME5 0x0602D9F0
     if (g_bSaturnMode && g_saturnBattleActive) {
         s_pendingJill = ((g_playerEntity.id & 3) == CHAR_JILL);
         if (s_battleFinished) {
@@ -2121,6 +2126,11 @@ void saturn_battle_update(void)
     // frame. See battle_sync_arena().
     battle_sync_arena();
 
+    // GAME5 0x0602D8C6 / 0x0602D950 / 0x0602D9F0: the game loop's death test
+    // (HP negative, a signed halfword) stops the clock on the frame it first
+    // passes, not when the death sequence is over.
+    if (g_playerEntity.health < 0) s_battle.flags &= ~BB_CLOCK;
+
     if (s_battleFinished) return;         // results shown; game_loop is leaving
     if (s_battle.state == 2) return;      // the door transition owns the run
 
@@ -2147,7 +2157,7 @@ void saturn_battle_update(void)
             s_battle.state = 1;
             s_battle.timer = 0;
             s_battle.flags |= BB_ADVANCE;
-            s_battle.flags &= ~BB_CLEARED;
+            s_battle.flags &= ~BB_CLOCK;  // the clock holds until the next room is in
             // HP is pinned up to at least 1, saved, and shown full for the
             // pause; the real value comes back afterwards.
             if (g_playerEntity.health <= 0) g_playerEntity.health = 1;
@@ -2233,15 +2243,57 @@ void saturn_battle_draw_hud(void)
     }
 }
 
-void saturn_battle_tick_run(void)
+// The run clock. GAME5 keeps it in its per-frame interrupt routine (0x06036508,
+// installed as a callback at 0x0602B2B2 / 0x0602B4C2 / 0x0602B858 / 0x0602C868),
+// right after the play timer (0x060AD01C, +1 capped at 0x014996C4):
+//
+//   06036592  battle bit 31 of block 0x060A67D0 + 0xA50 clear -> skip
+//   0603659E  0x060A67A0 bit 0 clear                           -> skip
+//   060365A8  0x002F3000 & 0xFF00, flag 0x4000, +0xA9A, n % 60 -> only decide
+//             whether the m:ss text is redrawn; every one of them falls
+//             through to
+//   0603662A  0x002FFFA0 += 1, capped at 0x57E04
+//
+// So it is not a gameplay counter: it runs at the display rate whatever the
+// game is doing - inventory and item box included - and the only thing that
+// stops it is bit 0 of the battle block, whose writers are
+//
+//   0602CF3C  set    the end of the game's start-up: the first room loaded
+//                    AND the opening message closed (the wait at 0x0602CF0A)
+//   0602EAC6  set    the end of the room transition routine (0x0602DBBC)
+//   0602DBDC  clear  the start of that routine
+//   0602D9F0  clear  the player's death: 0x0602D9C8, which the game loop
+//                    calls on the first frame HP is negative (0x0602D8C6 sets
+//                    bit 24 of 0x002F3000, 0x0602D950 calls it at step 0)
+//   060888C6  clear  the arena is cleared (state 0 -> 1), after the banner
+//
+// which makes the clock stop at the moment the last enemy falls and stay
+// stopped through the 120-frame pause and the load of the next arena.
+//
+// Port: main_loop() is the one routine every frame goes through, whichever
+// task owns the screen, so the tick lives there, and it counts real time
+// rather than calls - main_loop() runs at 30 a second in play and faster in
+// the menus, the vertical blank at 60 throughout.
+void saturn_battle_clock_run(int run)
 {
     if (!g_bSaturnMode || !g_saturnBattleActive) return;
-    if (!battle_clock_running()) return;
-    // GAME5 0x0603662A adds 1 per HUD draw to a count read as 60ths of a second
-    // (mm = n / 3600, the 0x57E04 cap = 99:59). This hook runs once per gameplay
-    // tick, which the pump paces at 33 ms (30 per second), so one tick is two
-    // 60ths: adding 1 ran the clock at half speed.
-    s_battleRunFrames += BATTLE_RUN_FRAMES_PER_TICK;
+    if (run) s_battle.flags |= BB_CLOCK;
+    else     s_battle.flags &= ~BB_CLOCK;
+}
+
+void saturn_battle_tick_run(void)
+{
+    const DWORD now = plat_time_ms();
+    const DWORD elapsed = now - s_battleClockLastMs;
+    s_battleClockLastMs = now;
+
+    if (!g_bSaturnMode || !g_saturnBattleActive) return;
+    if ((s_battle.flags & BB_CLOCK) == 0) return;
+    if (elapsed > BATTLE_CLOCK_MAX_GAP_MS) return;
+
+    s_battleClockRemainder += elapsed * BATTLE_RUN_FRAMES_PER_SEC;
+    s_battleRunFrames += (int)(s_battleClockRemainder / 1000);
+    s_battleClockRemainder %= 1000;
     if (s_battleRunFrames > BATTLE_MAX_RUN_FRAMES) s_battleRunFrames = BATTLE_MAX_RUN_FRAMES;
 }
 

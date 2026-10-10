@@ -45,6 +45,7 @@
 #include "../marni/PSXTexture.h"
 #include "TmdRenderer.h"
 #include "FileLoader.h"
+#include "saturn/SaturnBattle.h"
 
 // --- forward declarations of port-side helpers ---------------------------------
 extern int  PSXObject_Store(CMarniDirect3DTMD* self, int* tmdHdr, int objIndex,
@@ -1430,6 +1431,11 @@ void room_transition_load(void)
     g_roomTransitionBusy   = 1;
     g_AttractModeIdleTimer = 1;
 
+    // Sega Saturn Battle Game: the run clock stops for the transition (GAME5
+    // 0x0602DBDC, the first thing its transition routine does) and starts again
+    // at the end of it (0x0602EAC6). No-op outside a run.
+    saturn_battle_clock_run(0);
+
     object_delete_00442170(0);
     SetScreenOffset(160, 120);
 
@@ -1553,4 +1559,6 @@ void room_transition_load(void)
 
     g_AttractModeIdleTimer = 0;
     g_roomTransitionBusy   = 0;
+
+    saturn_battle_clock_run(1);
 }

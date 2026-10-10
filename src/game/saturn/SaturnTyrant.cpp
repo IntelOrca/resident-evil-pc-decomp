@@ -666,9 +666,8 @@ int saturn_game_loop_update(void)
     // get the same push in update_entities.
     saturn_capsule_collision(g_playerEntity.scaMatrixData.localMatrix.t);
 
-    // The Battle Game's arena sequence and run clock.
+    // The Battle Game's arena sequence. The run clock is main_loop()'s.
     if (g_saturnBattleActive) {
-        saturn_battle_tick_run();
         saturn_battle_update();
         // The end sequence is over: leave the run the way a death does;
         // game_start then chains saturn_ranking_state (GAME5 raises bits 0-1
