@@ -24,9 +24,11 @@
 #include "Entities.h"
 #include "BioCard.h"
 #include "dc/ArrangeStages.h"   // room_effect_page_entry()
+#include "saturn/SaturnBattle.h"
 #include "../DebugPrint.h"
 #include <cstring>
 #include <cstdlib>
+#include "entities/EntityCommon.h"
 
 // ---------------------------------------------------------------------------
 // Cross-file symbols
@@ -728,7 +730,13 @@ static int effect_projectile_hit_check(int range, short x, short z)
     if (pPVar != NULL) {
         if (check_weapon_line_of_sight((VECTOR*)pPVar->scaMatrixData.localMatrix.t) == 0) {
             if (pPVar->isBeingAttackedFlag == 0) {
-                if ((g_EnemiesList[0].id == 3) || (g_EnemiesList[0].id == 4)) {
+                // Saturn Battle Game: the spiders' venom does not poison. GAME5
+                // 0x06049D4A-0x06049D56 tests the battle bit right after the
+                // id test and branches over the two rand() calls and the
+                // `+0xDC |= 2` / `+0x174 = 0x96` pair when it is set; the damage
+                // below is still applied. The run has no blue herb to cure it.
+                if (((g_EnemiesList[0].id == ENEMY_WEB_SPINNER) || (g_EnemiesList[0].id == ENEMY_BLACK_TIGER)) &&
+                    !(g_bSaturnMode && g_saturnBattleActive)) {
                     if ((g_RandSeed & 1) * ((unsigned int)g_RandSeed & 1) != 0) {
                         pPVar->healthStatusFlags |= 2;
                         *(unsigned char*)((char*)pPVar + 0x174) = 0x96;

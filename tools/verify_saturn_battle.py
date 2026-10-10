@@ -546,6 +546,23 @@ def check_yawn():
               'GAME5: the flee is skipped when the battle bit is set')
         check(w(0x0607F8CC) == 0x73F1 and w(0x060805EE) == 0x71E4,
               'GAME5: segment hit is `add #-15`, bite is `add #-28`')
+        # The spiders' venom splash (the PC's effect_projectile_hit_check,
+        # 0x0043bd90): ids 3/4, then the battle bit - `bf` over the two rand()
+        # calls and the `+0xDC |= 2` / `+0x174 = 0x96` pair when it is SET.
+        check(struct.unpack_from('>I', data, 0x06049E74 - PRG_BASE)[0] == 0x060A67D0
+              and struct.unpack_from('>I', data, 0x06049E78 - PRG_BASE)[0] == 0x80000000
+              and w(0x06049D4A) == 0xD14A and w(0x06049D54) == 0x2228
+              and w(0x06049D56) == 0x8B16
+              and w(0x06049D78) == 0xE002 and w(0x06049D7A) == 0x220B
+              and w(0x06049D82) == 0xE196,
+              'GAME5: the spider venom (+0xDC |= 2, timer 0x96) is skipped when '
+              'the battle bit is set')
+    fx = open(os.path.join(REPO, 'src', 'game', 'EffectSystem.cpp'),
+              encoding='utf-8', errors='replace').read()
+    check(re.search(r'g_EnemiesList\[0\]\.id == 4\)\) &&\s*'
+                    r'!\(g_bSaturnMode && g_saturnBattleActive\)\) \{[^}]*?'
+                    r'healthStatusFlags \|= 2;', fx, re.S) is not None,
+          'the spider venom does not poison in the Battle Game')
     check('} else if (g_bSaturnMode && g_saturnBattleActive) {\n' in src
           and 'ew(ENTITY, 0x88) = 0x015e;' in src,
           '350 HP only for the Battle Game')

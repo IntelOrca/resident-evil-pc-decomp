@@ -1513,6 +1513,15 @@ module entry sets it from mode byte 2 (`0x0602B9AC`: `cmp/eq #2` on the byte at
   4. **No venom in the Battle Game** (`0x060806DC`-`0x060806F6`): the Yawn-1
      bite still raises the "poisoned" story flag, but the `+0xDC |= 0x20` status
      is skipped when the battle bit is set.
+     The spiders' venom is switched off the same way: the projectile splash
+     test (`0x06049D30`, the PC's `effect_projectile_hit_check` `0x0043bd90`)
+     tests the battle bit at `0x06049D4A`-`0x06049D56` after the id 3/4 test
+     and `bf`s over the two `rand()` calls and the `+0xDC |= 2` /
+     `+0x174 = 0x96` pair; the 15 / 30 damage still lands. So the Yawn and
+     the spiders do not poison in the Battle Game, and `battle_run_init`
+     clears both bits (`+0xDC &= 0x9D`). The Adder and the Wasp, the
+     other two poisoners, are in no arena, so their writes need no test.
+     Play-tested 2026-10-10.
   3. **The selector is unchanged.** The arena-5 `enemy_set` carries behaviour
      byte `0x02`, so it runs the free-roaming tree — `[0]`/`[2]` of the identical
      PC/`0x0609FD88` tables. The arena Yawn is a **Second-Yawn** fight in the one
