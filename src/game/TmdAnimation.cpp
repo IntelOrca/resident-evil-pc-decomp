@@ -693,6 +693,14 @@ void ComplexTmdObjectSetup(int* param_1)
                 unsigned int texHeight = *(unsigned int*)(texBank + matOffset + 0x30);
                 if (texWidth > 0) vertBuf[9] = (float)uVal / (float)texWidth;
                 if (texHeight > 0) vertBuf[10] = (float)vVal / (float)texHeight;
+                // Port extension (Saturn-converted models, PSXObject_SetTexHeight):
+                // a TIM taller than one page. The packet's pad halfword after
+                // (u2, v2) carries the 256-line page; without it every tile of
+                // Plant 42's roots (8 pages) sampled page 0. No original TIM is
+                // taller than 256 lines, so the stock path is unchanged.
+                if (texHeight > 256) {
+                    vertBuf[10] = ((float)vVal + (float)(uvData[2] >> 16) * 256.0f) / (float)texHeight;
+                }
 
                 // Set vertex (this = the entry, matching the original)
                 setVertex(ptrArray, vertexCount, vertBuf);

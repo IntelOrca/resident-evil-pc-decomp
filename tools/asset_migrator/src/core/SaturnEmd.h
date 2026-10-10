@@ -26,12 +26,31 @@ struct SaturnEmdInfo {
     int timHeight = 0;
 };
 
+struct SaturnEmdOptions {
+    // A model the game hangs a weapon model on: the player (CHAR10..13, the
+    // alternate outfits; Players/W??.EMW) and the NPCs (EM102x;
+    // Players/WS2??.TMD, CharacterNpc.cpp). A weapon model has no texture of
+    // its own - it samples the left 128x256 page of its holder's TIM - so the
+    // PS1 section's copy of that page is kept as page 0.
+    bool weaponPage = false;
+    // Jill's flamethrower. Players/W15.EMW is Chris's model (its packets are
+    // W05.EMW's), and the flamethrower's texels are in Chris's page only: on
+    // Jill's they land on her forearm and hair, in the PC release too. With
+    // these two set (and weaponPage), the texels `donorMask` flags (128 x 256,
+    // row-major, non-zero = wanted) are taken from the left page of `donorEmd`
+    // - another Saturn .EMD, Chris's - and written to the RIGHT half of page 0,
+    // which a weapon holder's page leaves empty. The overlay then ships a
+    // W15.EMW whose packets read that half (core/SaturnOverlay.cpp).
+    const std::vector<uint8_t>* donorEmd = nullptr;
+    const std::vector<uint8_t>* donorMask = nullptr;
+};
+
 // True when `data` starts with the Saturn .EMD index tag (00 00 00 10).
 bool isSaturnEmd(const std::vector<uint8_t>& data);
 
 // Convert a Saturn .EMD into a PC-format .EMD.
 bool convertSaturnEmd(const std::vector<uint8_t>& saturn,
                       std::vector<uint8_t>* pcEmd, SaturnEmdInfo* info,
-                      std::string* error);
+                      std::string* error, const SaturnEmdOptions& opts = {});
 
 }  // namespace re1

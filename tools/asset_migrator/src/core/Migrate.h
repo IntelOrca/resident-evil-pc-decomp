@@ -110,6 +110,14 @@ struct SaturnMigrationOptions {
     //   Saturn's BGM<group>.CDP sequences into SATURN/Sound under the PC's own
     //   file names (core/SaturnBgmTable.h).
     bool allBgm = false;
+    //   allModels: every other ENEMY/*.EMD on the disc - the enemies and NPCs
+    //   (EM10xx / EM11xx) and the four player models (CHAR10..13) - converted to
+    //   PC .EMDs in SATURN/Enemy under the disc's own names, which are the PC's,
+    //   so Saturn mode draws the Saturn's meshes and textures for everyone. The
+    //   always-migrated models above are not part of the switch, and the disc's
+    //   EM1030..EM1033 are never written under those names (they are the Saturn
+    //   outfits, kept as EM106x/EM116x so they do not shadow the PC's own).
+    bool allModels = false;
     //   movies: MOVIE.CPK's 28 Sega FILM movies -> SATURN/Movie/<PC name>.mp4
     //   (H.264 + AAC, needs ffmpeg; core/SaturnMovie.h). The prologue's three
     //   Saturn files are joined into one, which the game cuts for Jill at the

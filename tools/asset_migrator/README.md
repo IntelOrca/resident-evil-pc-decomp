@@ -142,9 +142,10 @@ rooms. See `docs/SATURN_VERSION_ANALYSIS.md` §6b.
 `re1am_selftest satwardrobe IN OUT jpn` runs the Japanese wardrobe patch alone.
 
 Everything below up to "Optional" is **always migrated** - the port's Saturn mode
-needs all of it, so there is no switch. The tab offers exactly two optional
-migrations (all rooms and backgrounds; all campaign BGM) and the audio format and
-quality, which apply to every rendered sound.
+needs all of it, so there is no switch. The tab offers the optional
+migrations listed further down (all models; all rooms and backgrounds; all
+campaign BGM; the FMV) and the audio format and quality, which apply to every
+rendered sound.
 
 - **Saturn-only creatures** -> `SATURN/Enemy/`: `EM1016`/`EM1116` (the Tick,
   Chris's / Jill's model-table block) and `EM1017`/`EM1117` (Zombie Wesker),
@@ -213,6 +214,73 @@ quality, which apply to every rendered sound.
 - `SATURN/SATURN.TXT` lists what was written.
 
 Optional (off by default):
+
+- **All enemy and character models** -> `SATURN/Enemy/`: every other
+  `ENEMY/*.EMD` on the disc - the enemies and NPCs (`EM10xx`/`EM11xx`) and the
+  four player models (`CHAR10..13`), 63 files - converted like the
+  creatures above and written under the disc's names, which are the PC's, so
+  Saturn mode draws the Saturn's meshes for everyone
+  (`re1am_selftest saturn ... --all-models`). The disc's `EM1030..EM1033` are
+  left out: they are the Saturn outfits, already written as `EM106x`/`EM116x`,
+  and under their disc names they would shadow the PC's own outfits. About 19 MB;
+  a converted model is 1.5-2.5x the PC file (up to 478 KB), which the game's
+  `DATA_BUFFER_PORT_HEADROOM` and the player buffer's `spillGuard` are there for.
+
+What `core/SaturnEmd.cpp` does beyond the plain mesh/texture conversion (all of
+it applies to the always-migrated models too; `tools/saturn_emd.py` has none of
+it):
+
+- **Joint ids.** Three models label their skeleton nodes with ids that are not
+  the PS1's: the Neptune (`EM100B`) repeats one, the wasp (`EM1007`) rotates
+  them, the adder (`EM100A`) is rooted at PS1 joint 1. Every node still rests
+  where a PS1 joint does, so the ids are taken from the rest positions.
+- **Joint offsets.** The Saturn's skeleton is its own (Barry's chest and
+  shoulders, Rebecca, Zombie Wesker over the zombie's skeleton, the spider
+  web): the node offsets are written into the PS1 skeleton the engine animates
+  with (the one at directory dword 1), relative to each joint's PS1 parent.
+  Rebecca's root mesh is centred 451 units above the PS1's waist origin; the
+  root mesh and its children take that back. **Not covered:** a
+  `Players/W??.EMW` carries its own copy of the skeleton for the aim
+  animations, which the migrator does not touch.
+- **Node scale.** A non-root node's scale is baked into its mesh and its
+  children's offsets (the Neptune's dorsal fin is stored at half size under a
+  x2 node; Enrico, `EM1028`, has torso and legs at x0.935). The root's scale
+  (the Black Tiger's 0.1) and the node angles (`CHAR10`'s feet, the Yawn) are
+  not applied.
+- **Plant 42's roots** (`EM100E`) are half a root ball on both releases, the
+  half the room's camera sees - facing +X on the PS1 and -Z on the Saturn. A
+  single-mesh model is turned about Y in quarter turns to fit the PS1 mesh's
+  footprint.
+- **Joints with no Saturn mesh** (`EM1029`: 4, 5, 7, 8) keep their slot as an
+  empty PS1 placeholder.
+- **PS1 objects past the Saturn skeleton** keep the PS1 geometry: the Tyrant's
+  heart (object 15), Plant 42's bulb and vines (16, 17), the spiders' object
+  20. Their texture is the PS1 page, written as **page 0** of the output TIM
+  with its colours quantized onto the CLUT entries the Saturn palettes leave
+  free; the Saturn textures then start at page 1. The 8-vertex box the player
+  and NPC models carry as object 15 stays empty.
+- **Models that hold a weapon** - the player (`CHAR10..13`, the outfits) and
+  the NPCs (`EM102x`); `re1am_selftest satemd IN OUT weapon` - keep the PS1
+  texture's whole left 128x256 page the same way: a weapon model
+  (`Players/W??.EMW`, `Players/WS2??.TMD`) has no texture of its own, it
+  samples that page of its holder's TIM.
+- **Jill's flamethrower** (a port fix, not Saturn data). `Players/W15.EMW` is
+  Chris's model - its packets are `W05.EMW`'s - and the flamethrower's texels
+  exist in Chris's page only, so on Jill it is textured with her forearm and
+  hair, in the PC release too. Her page cannot be patched in place (her other
+  weapons use the same texels), so the texels the weapon covers are copied
+  from Chris's page (the disc's `CHAR10.EMD`) into the **right half** of page 0
+  of Jill's models (`CHAR11`, `EM1160`, `EM1161`), which a weapon holder's
+  page leaves empty, and with *All enemy and character models* the overlay
+  gets a `SATURN/Players/W15.EMW` - the base tree's file
+  (`<target>/USA|JPN/Players/W15.EMW`) with every packet moved 128 texels
+  right. No base file, no change. The patched weapon only makes sense over a
+  converted Jill, which is why it is written with that option only.
+
+The game reads the page of a packet in two places: `PSXObject_Store`
+(`PSXObject_SetTexHeight`) and the per-triangle path Plant 42 and its roots are
+drawn through (`TmdAnimation.cpp`), which is what the roots' 8-page texture
+needs.
 
 - **All rooms and backgrounds** -> `SATURN/Stage1..7/`: every
   `STAGEn/ROOMsRRv.RDT` LZ77-decoded (no relabel: the shared rooms decode to the

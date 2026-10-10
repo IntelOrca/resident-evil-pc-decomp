@@ -13,7 +13,9 @@
 //                                  alternate outfits, which these must not shadow
 //                                  -> converted to PC .EMDs (core/SaturnEmd)
 //   (all of the above, the arenas, the Tyrant room, the title font and the Battle
-//   Game's sound are always written; only the two switches below are optional)
+//   Game's sound are always written; only the switches below are optional)
+//   Enemy/EM10xx.EMD, EM11xx.EMD,  [allModels] every other enemy, NPC and player
+//   Enemy/CHAR10..13.EMD           model on the disc, converted the same way
 //   Stage1..7/ROOM*.RDT, RC*.pak   [allRooms] every other campaign room and its
 //                                  backgrounds, decoded
 //   Sound/<PC BGM name>            [allBgm] every campaign BGM, rendered from
@@ -65,6 +67,7 @@
 #include "core/Tim.h"
 #include "core/Util.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -85,19 +88,29 @@ struct Model {
     const char* disc;
     const char* out;
     const char* what;
+    bool weapon;  // holds a weapon model: keeps the weapons' texture page
 };
 
 const Model kModels[] = {
-    {"EM1016.EMD", "EM1016.EMD", "the Tick (Chris's game)"},
-    {"EM1116.EMD", "EM1116.EMD", "the Tick (Jill's game)"},
-    {"EM1017.EMD", "EM1017.EMD", "Zombie Wesker (Chris's game)"},
-    {"EM1117.EMD", "EM1117.EMD", "Zombie Wesker (Jill's game)"},
-    {"EM1030.EMD", "EM1060.EMD", "Chris, Saturn alternate outfit 1"},
-    {"EM1032.EMD", "EM1061.EMD", "Chris, Saturn alternate outfit 2"},
-    {"EM1031.EMD", "EM1160.EMD", "Jill, Saturn alternate outfit 1"},
-    {"EM1033.EMD", "EM1161.EMD", "Jill, Saturn alternate outfit 2"},
+    {"EM1016.EMD", "EM1016.EMD", "the Tick (Chris's game)", false},
+    {"EM1116.EMD", "EM1116.EMD", "the Tick (Jill's game)", false},
+    {"EM1017.EMD", "EM1017.EMD", "Zombie Wesker (Chris's game)", false},
+    {"EM1117.EMD", "EM1117.EMD", "Zombie Wesker (Jill's game)", false},
+    {"EM1030.EMD", "EM1060.EMD", "Chris, Saturn alternate outfit 1", true},
+    {"EM1032.EMD", "EM1061.EMD", "Chris, Saturn alternate outfit 2", true},
+    {"EM1031.EMD", "EM1160.EMD", "Jill, Saturn alternate outfit 1", true},
+    {"EM1033.EMD", "EM1161.EMD", "Jill, Saturn alternate outfit 2", true},
 };
 constexpr int kModelCount = (int)(sizeof(kModels) / sizeof(kModels[0]));
+
+// True for a disc model the mandatory pass above already wrote. The outfits
+// matter most: their disc names (EM1030..EM1033) are the PC's own alternate
+// outfits', so the "all models" pass must not write them under those names.
+bool isMandatoryModel(const std::string& discName) {
+    for (const Model& m : kModels)
+        if (discName == m.disc) return true;
+    return false;
+}
 
 const char* const kArenas[] = {"ROOM8010.RDT", "ROOM8020.RDT", "ROOM8030.RDT",
                                "ROOM8040.RDT", "ROOM8050.RDT", "ROOM8060.RDT",
@@ -149,6 +162,54 @@ const RoomRdt kRoomRdts[] = {
      "holds two 40x30 icons against one), so the Saturn's room is loaded "
      "instead of the PC's"},
 };
+
+// Jill's flamethrower (see SaturnEmdOptions::donorEmd). The disc's names of the
+// models Jill is loaded from; Chris's CHAR10 is the one whose page has the texels.
+bool isJillPlayerModel(const std::string& discName) {
+    return discName == "CHAR11.EMD" || discName == "EM1031.EMD" || discName == "EM1033.EMD";
+}
+
+// <root>/<folder>/<file>, each matched without regard to case; "" when absent.
+std::string findNoCase(const std::string& root, const std::string& folder,
+                       const std::string& file) {
+    for (const std::string& d : listDirectory(root))
+        if (toLower(d) == toLower(folder))
+            for (const std::string& f : listDirectory(joinPath(root, d)))
+                if (toLower(f) == toLower(file)) return joinPath(joinPath(root, d), f);
+    return std::string();
+}
+
+// A weapon .EMW ends in two dwords, the second the offset of its TMD: one
+// object of 0x34000609 packets. Flags the texels the packets cover (128 x 256,
+// each packet's UV bounding box) and moves every packet 128 texels right, onto
+// the page half the donor texels are written to. False if it is not that shape.
+bool patchWeaponToRightHalf(std::vector<uint8_t>* emw, std::vector<uint8_t>* mask) {
+    std::vector<uint8_t>& d = *emw;
+    if (d.size() < 64) return false;
+    const size_t tmd = readU32(d.data(), d.size(), d.size() - 4) & ~3u;
+    if (tmd + 12 + 28 > d.size() || readU32(d.data(), d.size(), tmd + 8) != 1) return false;
+    const size_t prims = tmd + 12 + readU32(d.data(), d.size(), tmd + 12 + 16);
+    const size_t count = readU32(d.data(), d.size(), tmd + 12 + 20);
+    if (count == 0 || prims + 28 * count > d.size()) return false;
+    mask->assign((size_t)128 * 256, 0);
+    for (size_t i = 0; i < count; ++i) {
+        const size_t pk = prims + 28 * i;
+        if (readU32(d.data(), d.size(), pk) != 0x34000609) return false;
+        int u0 = 255, u1 = 0, v0 = 255, v1 = 0;
+        for (int c = 0; c < 3; ++c) {
+            if (d[pk + 4 + 4 * c] > 127) return false;
+            u0 = std::min<int>(u0, d[pk + 4 + 4 * c]);
+            u1 = std::max<int>(u1, d[pk + 4 + 4 * c]);
+            v0 = std::min<int>(v0, d[pk + 5 + 4 * c]);
+            v1 = std::max<int>(v1, d[pk + 5 + 4 * c]);
+        }
+        for (int y = v0; y <= v1; ++y)
+            for (int x = u0; x <= u1; ++x) (*mask)[(size_t)y * 128 + x] = 1;
+    }
+    for (size_t i = 0; i < count; ++i)
+        for (int c = 0; c < 3; ++c) d[prims + 28 * i + 4 + 4 * c] += 128;
+    return true;
+}
 
 bool readDiscFile(const DiscImage& img, const std::string& folder,
                   const std::string& name, std::vector<uint8_t>* out,
@@ -307,15 +368,51 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
         }
     }
 
+    // The rest of ENEMY/*.EMD, for the optional pass: every model the mandatory
+    // set does not already cover.
+    std::vector<const DiscEntry*> allModelList;
+    if (opts.allModels) {
+        for (const DiscEntry& e : img.entries()) {
+            if (e.directory) continue;
+            const size_t slash = e.path.rfind('/');
+            if (slash == std::string::npos || slash < 5 ||
+                e.path.compare(slash - 5, 5, "ENEMY") != 0)
+                continue;
+            const std::string file = e.path.substr(slash + 1);
+            if (file.size() < 5 || file.compare(file.size() - 4, 4, ".EMD") != 0 ||
+                isMandatoryModel(file))
+                continue;
+            allModelList.push_back(&e);
+        }
+    }
+
     // Progress units: the fixed work, plus a unit per room and per BGM when asked.
     const int fixedUnits = kModelCount + 15 +
                            (int)(sizeof(kRoomBgs) / sizeof(kRoomBgs[0])) +
                            (int)(sizeof(kRoomRdts) / sizeof(kRoomRdts[0])) +
                            kWardrobeCount + 2;
-    const int total = fixedUnits + (int)allRoomList.size() + (opts.allBgm ? 1 : 0) +
-                      (opts.movies ? 1 : 0);
+    const int total = fixedUnits + (int)allModelList.size() + (int)allRoomList.size() +
+                      (opts.allBgm ? 1 : 0) + (opts.movies ? 1 : 0);
     int done = 0;
 
+    // Jill's flamethrower: her models get the flamethrower's texels from Chris's
+    // page, and (with all models, i.e. with her default model converted too)
+    // the overlay gets a W15.EMW that reads them. The weapon file is the base
+    // tree's - the Saturn disc has no .EMW - so without one nothing changes.
+    std::vector<uint8_t> flameEmw, flameMask, chrisEmd;
+    {
+        const std::string base =
+            joinPath(opts.targetRoot, region == SaturnRegion::Jpn ? "JPN" : "USA");
+        const std::string path = findNoCase(base, "Players", "W15.EMW");
+        if (path.empty() || !readFile(path, &flameEmw) ||
+            !patchWeaponToRightHalf(&flameEmw, &flameMask) ||
+            !readDiscFile(img, "ENEMY", "CHAR10.EMD", &chrisEmd, nullptr)) {
+            flameEmw.clear();
+            flameMask.clear();
+            progress.info("no " + joinPath(joinPath(base, "Players"), "W15.EMW") +
+                          ": Jill's flamethrower keeps the base tree's look");
+        }
+    }
     {
         progress.info("models: Saturn-only creatures and alternate outfits -> PC .EMD");
         for (const Model& m : kModels) {
@@ -327,7 +424,13 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
             std::vector<uint8_t> src, pc;
             if (!readDiscFile(img, "ENEMY", m.disc, &src, error)) return false;
             SaturnEmdInfo info;
-            if (!convertSaturnEmd(src, &pc, &info, &err)) {
+            SaturnEmdOptions eo;
+            eo.weaponPage = m.weapon;
+            if (!flameMask.empty() && isJillPlayerModel(m.disc)) {
+                eo.donorEmd = &chrisEmd;
+                eo.donorMask = &flameMask;
+            }
+            if (!convertSaturnEmd(src, &pc, &info, &err, eo)) {
                 if (error) *error = std::string(m.disc) + ": " + err;
                 return false;
             }
@@ -345,6 +448,68 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
                      info.pages, info.timHeight, pc.size());
             progress.info(line);
         }
+    }
+
+    if (opts.allModels) {
+        progress.info(std::string("models: every other enemy, NPC and player model "
+                                  "(optional) -> ") +
+                      saturnOverlayFolder(region) + "/Enemy");
+        size_t bytes = 0, largest = 0;
+        for (const DiscEntry* e : allModelList) {
+            if (progress.isCancelled()) {
+                if (error) *error = "cancelled";
+                return false;
+            }
+            const std::string name = e->path.substr(e->path.rfind('/') + 1);
+            progress.phase(done++, total, name);
+            std::vector<uint8_t> src, pc;
+            if (!img.readFile(*e, &src)) {
+                if (error) *error = "cannot read " + e->path;
+                return false;
+            }
+            SaturnEmdInfo info;
+            SaturnEmdOptions eo;
+            // The models a weapon is hung on: CHAR10..13 (the player, Players/
+            // W??.EMW) and the NPCs EM1020..EM102E (Players/WS2??.TMD).
+            eo.weaponPage = name.compare(0, 4, "CHAR") == 0 || name.compare(0, 5, "EM102") == 0;
+            if (!flameMask.empty() && isJillPlayerModel(name)) {
+                eo.donorEmd = &chrisEmd;
+                eo.donorMask = &flameMask;
+            }
+            if (!convertSaturnEmd(src, &pc, &info, &err, eo)) {
+                if (error) *error = name + ": " + err;
+                return false;
+            }
+            const std::string rel = "Enemy/" + name;
+            if (!writeFile(joinPath(overlay, rel), pc)) {
+                if (error) *error = "cannot write " + joinPath(overlay, rel);
+                return false;
+            }
+            written.push_back(rel);
+            bytes += pc.size();
+            largest = std::max(largest, pc.size());
+            char line[200];
+            snprintf(line, sizeof(line),
+                     "  %s: %d parts, %d palettes, %d textures -> %d page(s), TIM 256x%d, "
+                     "%zu bytes",
+                     name.c_str(), info.parts, info.palettes, info.textures, info.pages,
+                     info.timHeight, pc.size());
+            progress.info(line);
+        }
+        if (!flameEmw.empty()) {
+            const std::string rel = "Players/W15.EMW";
+            if (!makeDirs(joinPath(overlay, "Players")) ||
+                !writeFile(joinPath(overlay, rel), flameEmw)) {
+                if (error) *error = "cannot write " + joinPath(overlay, rel);
+                return false;
+            }
+            written.push_back(rel);
+            progress.info("  " + rel + ": Jill's flamethrower, reading Chris's texels from the "
+                                       "right half of her page");
+        }
+        progress.info("  " + std::to_string(allModelList.size()) + " model(s), " +
+                      std::to_string(bytes / 1024) + " KB; largest " +
+                      std::to_string(largest / 1024) + " KB");
     }
 
     {
@@ -698,6 +863,7 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
 
     progress.info("not migrated yet (no PC asset / no engine support):");
     progress.info(std::string("  ") +
+                  (opts.allModels ? "" : "the other enemy / NPC / player models (optional), ") +
                   (opts.allBgm ? "" : "the campaign's Saturn BGM (optional), ") +
                   (opts.movies ? "" : "the MOVIE.CPK FMV (optional), ") +
                   "the Saturn SE banks (SND/*.CDP, *.PCK), X68 SSCONV .BIN banks, "
@@ -727,6 +893,10 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
                 if (!ok) why = "not a consistent TITLEFNT.BIN";
             }
             else if (rel.rfind("Enemy/", 0) == 0) ok = checkPcEmd(d, &why);
+            else if (rel.rfind("Players/", 0) == 0) {
+                ok = d.size() == flameEmw.size();
+                if (!ok) why = "not the weapon file that was written";
+            }
             else if (rel.find(".pak") != std::string::npos)
                 ok = checkBackgroundPak(d, &why);
             else if (rel.rfind("Movie/", 0) == 0) {

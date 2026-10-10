@@ -17,11 +17,13 @@
 //   re1am_selftest ps1audio <image> <tree> [--no-sfx] [--no-voices] [--no-bgm]
 //                     [--ogg] [--ogg-q N] [--ffmpeg <path>]
 //   re1am_selftest bgm <image> <BGM name> <out.wav>
-//   re1am_selftest saturn <image> <target> [--all-rooms] [--all-bgm] [--movies]
+//   re1am_selftest saturn <image> <target> [--all-models] [--all-rooms] [--all-bgm]
+//                     [--movies]
 //                     [--ogg] [--ogg-q N] [--ffmpeg <path>] [--no-verify]
 //   re1am_selftest satcpk <image>   (MOVIE.CPK's FILM chain: offsets, frames)
 //   re1am_selftest satcdp <BATTLE.CDP> [segment-outdir]
-//   re1am_selftest satemd <saturn.EMD> <out.EMD>
+//   re1am_selftest satemd <saturn.EMD> <out.EMD> [weapon]
+//                     (weapon: keep the PS1 page weapon models sample)
 //   re1am_selftest satwardrobe <decoded ROOM11Cv.RDT> <out.RDT> [jpn]
 //                     (the wardrobe patch alone; compare with
 //                     tools/saturn_wardrobe_rdt.py patch)
@@ -310,6 +312,7 @@ int cmdSaturn(int argc, char** argv) {
     o.imagePath = argv[2];
     o.targetRoot = argv[3];
     for (int i = 4; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--all-models") == 0) o.allModels = true;
         if (std::strcmp(argv[i], "--all-rooms") == 0) o.allRooms = true;
         if (std::strcmp(argv[i], "--all-bgm") == 0) o.allBgm = true;
         if (std::strcmp(argv[i], "--movies") == 0) o.movies = true;
@@ -375,15 +378,17 @@ int cmdSatWardrobe(const char* in, const char* out, bool jpn) {
 
 // One Saturn .EMD -> PC .EMD, to compare byte-for-byte with
 // `python tools/saturn_emd.py pc IN OUT`.
-int cmdSatEmd(const char* in, const char* out) {
+int cmdSatEmd(const char* in, const char* out, bool weaponPage) {
     std::vector<uint8_t> src, pc;
     if (!readFile(in, &src)) {
         std::printf("ERROR: cannot read %s\n", in);
         return 1;
     }
     SaturnEmdInfo info;
+    SaturnEmdOptions eo;
+    eo.weaponPage = weaponPage;
     std::string err;
-    if (!convertSaturnEmd(src, &pc, &info, &err)) {
+    if (!convertSaturnEmd(src, &pc, &info, &err, eo)) {
         std::printf("ERROR: %s\n", err.c_str());
         return 1;
     }
@@ -986,7 +991,8 @@ int main(int argc, char** argv) {
         std::printf("wrote %s\n", argv[2]);
         return 0;
     }
-    if (cmd == "satemd" && argc >= 4) return cmdSatEmd(argv[2], argv[3]);
+    if (cmd == "satemd" && argc >= 4)
+        return cmdSatEmd(argv[2], argv[3], argc >= 5 && std::string(argv[4]) == "weapon");
     if (cmd == "satwardrobe" && argc >= 4)
         return cmdSatWardrobe(argv[2], argv[3], argc >= 5 && std::string(argv[4]) == "jpn");
     if (cmd == "satsong" && argc >= 6) return cmdSatSong(argc, argv);

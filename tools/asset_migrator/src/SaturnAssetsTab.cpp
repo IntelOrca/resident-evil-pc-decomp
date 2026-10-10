@@ -37,6 +37,18 @@ SaturnAssetsTab::SaturnAssetsTab(QWidget* parent) : QWidget(parent) {
     m_target->setText(QCoreApplication::applicationDirPath());
     auto* browseTarget = new QPushButton(tr("Browse..."), this);
 
+    m_allModels = new QCheckBox(tr("All enemy and character models"), this);
+    m_allModels->setChecked(false);
+    m_allModels->setToolTip(
+        tr("Converts every other model on the disc (ENEMY/EM10xx, EM11xx and "
+           "CHAR10-13: the enemies, the NPCs and the four player models) to PC "
+           ".EMDs in SATURN/Enemy under the PC's own file names, so Saturn mode "
+           "draws the Saturn's meshes and textures for everyone. The animations "
+           "are the PS1 data each Saturn model carries.\n"
+           "63 models, ~19 MB. A converted model is 1.5-2.5x the PC file "
+           "(its textures are unpacked into several pages). Off, only the "
+           "Saturn-only models listed above are written and the base tree "
+           "supplies the rest."));
     m_allRooms = new QCheckBox(tr("All rooms and backgrounds"), this);
     m_allRooms->setChecked(false);
     m_allRooms->setToolTip(
@@ -109,7 +121,8 @@ SaturnAssetsTab::SaturnAssetsTab(QWidget* parent) : QWidget(parent) {
     auto* form = new QFormLayout();
     form->addRow(tr("Disc image:"), pathRow(m_image, browseImage));
     form->addRow(tr("Target game folder:"), pathRow(m_target, browseTarget));
-    form->addRow(tr("Optional:"), m_allRooms);
+    form->addRow(tr("Optional:"), m_allModels);
+    form->addRow(QString(), m_allRooms);
     form->addRow(QString(), m_allBgm);
     form->addRow(QString(), m_movies);
     form->addRow(tr("Sound format:"), musicRow);
@@ -149,6 +162,7 @@ SaturnAssetsTab::SaturnAssetsTab(QWidget* parent) : QWidget(parent) {
         re1::SaturnMigrationOptions opts;
         opts.imagePath = m_image->text().toStdString();
         opts.targetRoot = m_target->text().toStdString();
+        opts.allModels = m_allModels->isChecked();
         opts.allRooms = m_allRooms->isChecked();
         opts.allBgm = m_allBgm->isChecked();
         opts.movies = m_movies->isChecked();
