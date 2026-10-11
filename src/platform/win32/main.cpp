@@ -5,6 +5,7 @@
 #include "Globals.h"
 #include "system/AssetPath.h"
 #include "system/ConfigFile.h"
+#include "game/TestHooks.h"
 
 // Forward declarations for local helpers
 static int  CheckSystemRequirements(void);
@@ -43,6 +44,10 @@ int PASCAL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     // Dev tooling: capture fail-fast precursors to crash.log (see CrashLog.cpp)
     extern void crashlog_install(void);
     crashlog_install();
+
+    // oracle hook: parse the --test-* flags once, before anything runs. With
+    // none of them present every hook below is inert.
+    TestHooks_Init(lpCmdLine);
 
     // 0x00441350: __chkstk() - stack probe for large stack frame
 
@@ -551,6 +556,14 @@ int RunMessageLoop(void)
     
     // 0x00441d71: Main loop start
     for (;;) {
+        // oracle hook: --test-nolimit forces the focus flags every iteration
+        // so window focus loss cannot pause the pump. The window is still
+        // created and D3D still presents every frame.
+        if (TestHooks_NoLimit()) {
+            g_bWindowFocused = TRUE;
+            g_bWindowActive = TRUE;
+        }
+
         DWORD peekFlags = PM_NOREMOVE;
         // Check for pending messages
         if (PeekMessageA(&msg, NULL, 0, 0, peekFlags)) {
@@ -684,7 +697,9 @@ int RunMessageLoop(void)
                 // g_bFrameSkipDetected is the escape hatch, not a second enable:
                 // once the governor decides the machine cannot hold the target it
                 // stops pacing here and drops presented frames instead.
-                if (kFrameLimiterEnabled) {
+                // oracle hook: --test-nolimit skips the pacing entirely so
+                // main_loop() runs on every iteration.
+                if (kFrameLimiterEnabled && !TestHooks_NoLimit()) {
                     BOOL bSkipFrame = FALSE;
 
                     if (g_bUseFrameSkip == 1) {
@@ -709,7 +724,13 @@ int RunMessageLoop(void)
                 // 0x00441f75: Execute game loop
                 g_dwGameTimer1 = currentTime;
                 int loopResult = main_loop();
-                
+
+                // oracle hook: the frame for this main_loop() call has been
+                // presented (FrameRateGovernor). Emit the pending per-tick
+                // trace line from the presented back buffer. No-op unless
+                // --test-trace armed the trace.
+                TestHooks_OnFrameCompleted();
+
                 if (loopResult == 0) {
                     // Game loop requested exit
                     if (g_bAccessibilityAnimations) {

@@ -9,6 +9,7 @@
 #include "dc/Items.h"    // lockpick item id (is_lockpick_item)
 #include "SpriteRenderer.h"
 #include "TmdRenderer.h"
+#include "TestHooks.h"   // oracle hook: pre-present frame capture
 #include <cstdlib>
 #include <cstdio>
 #include <time.h>
@@ -513,6 +514,9 @@ void FrameRateGovernor(void)
             }
 
             if (!g_DisablePad) {
+                // oracle hook: capture the frame while the back buffer is
+                // valid (before Present discards it). No-op unless --test-trace.
+                TestHooks_OnBeforePresent();
                 MarniPresent();
             }
             g_numFramesPresented++;

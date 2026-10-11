@@ -190,6 +190,7 @@
     <ClCompile Include="src\game\Rendering.cpp" />
     <ClCompile Include="src\game\JpnTextTables.cpp" />
     <ClCompile Include="src\game\PrintText.cpp" />
+    <ClCompile Include="src\game\TestHooks.cpp" />
     <ClCompile Include="src\game\TextureLoader.cpp" />
     <ClCompile Include="src\game\FadeSprite.cpp" />
     <ClCompile Include="src\game\EffectSystem.cpp" />
@@ -215,6 +216,7 @@
     <ClInclude Include="src\marni\MarniXInput.h" />
     <ClInclude Include="src\marni\MarniSound.h" />
     <ClInclude Include="src\game\SpriteRenderer.h" />
+    <ClInclude Include="src\game\TestHooks.h" />
     <ClInclude Include="src\game\Ps1EndingCredits.h" />
     <ClInclude Include="src\game\Ps1FmvSubtitles.h" />
     <ClInclude Include="src\game\Ps1FmvSubtitleData.h" />

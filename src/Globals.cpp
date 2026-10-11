@@ -2033,6 +2033,13 @@ extern "C" int re1_rand(void)
     return (int)((g_randState >> 16) & 0x7fff);
 }
 
+// oracle hook (port-only): expose the platform PRNG state for the test trace
+// (TestHooks.cpp `rng=` field). Nothing in the original binary.
+extern "C" unsigned int re1_rand_state(void)
+{
+    return g_randState;
+}
+
 #if defined(__linux__)
 extern "C" int rand() noexcept
 {
