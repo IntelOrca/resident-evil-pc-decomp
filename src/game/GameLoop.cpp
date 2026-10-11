@@ -25,6 +25,7 @@
 #include "saturn/SaturnBattle.h"
 #include "saturn/SaturnTyrant.h"
 #include "GameOptions.h"
+#include "TestHooks.h"
 
 // Forward declarations for functions only used within game_loop
 extern void FUN_00473f10(int* baseAddr, unsigned int bitIndex);
@@ -491,6 +492,13 @@ switchD_00480ff4_caseD_2:
                     break;
                 }
             }
+
+            // oracle hook: this inner-loop iteration is one gameplay tick.
+            // Arms the deterministic trace on the first room-106 tick and
+            // marks the line pending; the actual capture/emission happens in
+            // RunMessageLoop after the frame is presented. No-op unless
+            // --test-trace was passed.
+            TestHooks_OnGameplayTick();
 
             // 0x00481118-0x0048112e: Frame timing and attract demo check
             Task_sleep(1);

@@ -4,6 +4,7 @@
 #include "../marni/MarniSystem.h"
 #include "../marni/PSXTexture.h"
 #include "FileLoader.h"
+#include "TestHooks.h"
 #include "../system/AssetPath.h"
 #include <cstdlib>
 
@@ -224,6 +225,14 @@ void load_global_assets(void)
            0,       1,        0,       0,
     };
     CreateTexturedQuad(0, 0x2F, rectConfig);
+
+    // oracle hook: test-only direct new game (--test-newgame). Replaces the
+    // chain to the logos screen with the character-select case 6 transition
+    // and DisplayIntroAndStartGame minus the FMV. No-op without the flag.
+    if (TestHooks_NewGameArmed()) {
+        TestHooks_StartNewGame();
+        return;
+    }
 
     Task_chain((void*)logos_state);
 }

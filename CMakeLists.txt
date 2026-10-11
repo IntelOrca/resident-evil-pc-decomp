@@ -92,6 +92,7 @@ set(RE1_SOURCES
     src/game/SoundTables.cpp
     src/game/SpriteRenderer.cpp
     src/game/TaskScheduler.cpp
+    src/game/TestHooks.cpp
     src/game/TextureLoader.cpp
     src/game/GameOptions.cpp
     src/game/TitleMenuFont.cpp

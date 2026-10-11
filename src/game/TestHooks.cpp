@@ -1,0 +1,503 @@
+// TestHooks.cpp - oracle test hooks (port-only, test-gated)
+//
+// Implements the reference side of the arklay-rs oracle trace contract
+// (M:\git\arklay-rs\oracle\trace-v1.md). All behaviour here is gated on the
+// --test-* command line flags parsed in TestHooks_Init; with none of them the
+// functions are no-ops and the build behaves exactly as before.
+//
+// Nothing in this file exists in the original 1997 binary.
+#include "TestHooks.h"
+
+#include "../Globals.h"
+#include "../marni/MarniDX.h"
+#include "../platform/platform.h"
+
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
+// ---------------------------------------------------------------------------
+// Parsed flags (file-static; the game is single-threaded, single instance)
+// ---------------------------------------------------------------------------
+static int   s_newGameArmed     = 0;
+static int   s_newGameCharacter = 0;
+static int   s_noLimit          = 0;
+
+static char  s_tracePath[1024]  = {};
+static char  s_captureDir[1024] = {};
+static int   s_captureEvery     = 0;
+static int   s_exitAfter        = 0;
+static int   s_pressTick        = -1;
+static int   s_pressHold        = 0;
+
+// Trace runtime state
+static FILE*          s_traceFile = NULL;
+static int            s_traceArmed = 0;   // room 106 live, transition done
+static int            s_pendingTick = 0;  // a gameplay tick ran this main_loop
+static unsigned int   s_tick = 0;         // next traced tick index (t=)
+static unsigned int   s_capturesWritten = 0;
+
+// Pre-present capture stash (see TestHooks_OnBeforePresent): the back buffer
+// is only valid before MarniPresent, so the frame is captured there and the
+// trace line consumes the stash after main_loop returns.
+static void*          s_capturedPixels = NULL;
+static DWORD          s_capturedW = 0, s_capturedH = 0;
+static unsigned int   s_capturedHash = 0;
+static unsigned int   s_lastHash = 0;     // last presented frame's hash
+static int            s_capturedThisTick = 0;
+
+// ---------------------------------------------------------------------------
+// Command line parsing. WinMain's lpCmdLine has no program name. Tokens are
+// split on whitespace with double-quote awareness so paths may contain spaces.
+// ---------------------------------------------------------------------------
+static void TestHooks_Parse(const char* cmdLine)
+{
+    if (cmdLine == NULL) return;
+
+    static char buf[4096];
+    size_t len = strlen(cmdLine);
+    if (len >= sizeof(buf)) len = sizeof(buf) - 1;
+    memcpy(buf, cmdLine, len);
+    buf[len] = '\0';
+
+    char* tokens[64];
+    int   tokenCount = 0;
+    char* p = buf;
+    while (*p != '\0' && tokenCount < 64) {
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '\0') break;
+        if (*p == '"') {
+            p++;
+            tokens[tokenCount++] = p;
+            while (*p != '\0' && *p != '"') p++;
+            if (*p != '\0') *p++ = '\0';
+        } else {
+            tokens[tokenCount++] = p;
+            while (*p != '\0' && *p != ' ' && *p != '\t') p++;
+            if (*p != '\0') *p++ = '\0';
+        }
+    }
+
+    for (int i = 0; i < tokenCount; i++) {
+        const char* t = tokens[i];
+        if (strcmp(t, "--test-newgame") == 0 && i + 1 < tokenCount) {
+            s_newGameArmed = 1;
+            s_newGameCharacter = atoi(tokens[++i]);
+        } else if (strcmp(t, "--test-trace") == 0 && i + 1 < tokenCount) {
+            strncpy(s_tracePath, tokens[++i], sizeof(s_tracePath) - 1);
+        } else if (strcmp(t, "--test-capture-every") == 0 && i + 1 < tokenCount) {
+            s_captureEvery = atoi(tokens[++i]);
+        } else if (strcmp(t, "--test-capture-dir") == 0 && i + 1 < tokenCount) {
+            strncpy(s_captureDir, tokens[++i], sizeof(s_captureDir) - 1);
+        } else if (strcmp(t, "--test-exit-after") == 0 && i + 1 < tokenCount) {
+            s_exitAfter = atoi(tokens[++i]);
+        } else if (strcmp(t, "--test-press") == 0 && i + 2 < tokenCount) {
+            s_pressTick = atoi(tokens[++i]);
+            s_pressHold = atoi(tokens[++i]);
+        } else if (strcmp(t, "--test-nolimit") == 0) {
+            s_noLimit = 1;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Create every component of a directory path (plat_mkdir is one level).
+// ---------------------------------------------------------------------------
+static void TestHooks_MakeDirs(const char* path)
+{
+    if (path == NULL || path[0] == '\0') return;
+
+    static char tmp[1024];
+    size_t n = strlen(path);
+    if (n >= sizeof(tmp)) return;
+    memcpy(tmp, path, n + 1);
+
+    // Skip the drive prefix ("X:") or a leading '/', so the first component
+    // tried is a real directory name.
+    char* q = tmp;
+    if (n >= 2 && tmp[1] == ':') {
+        q = tmp + 2;
+        if (*q == '\\' || *q == '/') q++;
+    } else {
+        while (*q == '\\' || *q == '/') q++;
+    }
+
+    for (; *q != '\0'; q++) {
+        if (*q == '\\' || *q == '/') {
+            char saved = *q;
+            *q = '\0';
+            plat_mkdir(tmp);
+            *q = saved;
+        }
+    }
+    plat_mkdir(tmp);
+}
+
+// ---------------------------------------------------------------------------
+// TestHooks_Init
+// ---------------------------------------------------------------------------
+void TestHooks_Init(const char* cmdLine)
+{
+    TestHooks_Parse(cmdLine);
+
+    if (s_newGameArmed) {
+        fprintf(stderr, "[oracle] --test-newgame char=%d\n", s_newGameCharacter);
+    }
+    if (s_noLimit) {
+        fprintf(stderr, "[oracle] --test-nolimit\n");
+    }
+    if (s_tracePath[0] != '\0') {
+        s_traceFile = fopen(s_tracePath, "wb");
+        if (s_traceFile != NULL) {
+            fputs("oracle-trace v1 engine=ref\n", s_traceFile);
+            fflush(s_traceFile);
+            fprintf(stderr, "[oracle] trace %s (capture_every=%d dir=%s exit_after=%d)\n",
+                    s_tracePath, s_captureEvery, s_captureDir, s_exitAfter);
+        } else {
+            fprintf(stderr, "[oracle] cannot open trace file %s\n", s_tracePath);
+        }
+    }
+    if (s_captureDir[0] != '\0') {
+        TestHooks_MakeDirs(s_captureDir);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Flag queries
+// ---------------------------------------------------------------------------
+int TestHooks_NewGameArmed(void)     { return s_newGameArmed; }
+int TestHooks_NewGameCharacter(void) { return s_newGameCharacter; }
+int TestHooks_NoLimit(void)          { return s_noLimit; }
+
+// ---------------------------------------------------------------------------
+// TestHooks_PadOverride - the --test-press window, in traced ticks. The
+// message/loading narration needs a button press to advance; the Windows input
+// path reads GetAsyncKeyState directly (RE1_TEST_KEYS' plat_key_state hook is
+// dead code there), so the oracle injects the raw Cross bit (0x0040) into the
+// frame's held word instead. Cross remaps to dpad bit 0x8000, the action
+// button every menu/message advance reads.
+// ---------------------------------------------------------------------------
+unsigned int TestHooks_PadOverride(void)
+{
+    if (s_pressTick < 0 || !s_traceArmed) return 0;
+    int tick = (int)s_tick;
+    if (tick >= s_pressTick && tick < s_pressTick + s_pressHold) {
+        return 0x0040u;
+    }
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// TestHooks_StartNewGame
+//
+// Faithful reproduction of CharacterSelectionScreen's case 6 (case_6, source
+// lines 696-709: g_SelectedCharactedId / MSF_CHAR_VARIANT / g_bGameActive /
+// nullsub_0047eb80 / the three cleanup_texture_slot(12/13/14) calls) followed
+// by DisplayIntroAndStartGame (lines 24-32) minus the intro FMV.
+//
+// The FMV is the only thing dropped: MSF_FMV_REQUEST and g_selectedFmvId are
+// NOT set, so game_start runs the room 106 intro directly. The texture slot
+// cleanup is kept although this boot never loaded the character-select
+// textures into those slots - cleanup_texture_slot is safe on empty slots and
+// keeping it preserves the original state transition exactly.
+// ---------------------------------------------------------------------------
+void TestHooks_StartNewGame(void)
+{
+    g_SelectedCharactedId = (unsigned char)s_newGameCharacter;
+    if (s_newGameCharacter != 0) {
+        g_main_state_flags |= MSF_CHAR_VARIANT;
+    }
+    g_bGameActive = 2;
+    nullsub_0047eb80();
+    cleanup_texture_slot(12);
+    cleanup_texture_slot(13);
+    cleanup_texture_slot(14);
+
+    // DisplayIntroAndStartGame with the FMV request omitted.
+    sounds_reset();
+
+    // oracle hook: silence the sound system for the deterministic run.
+    // Voice playback gates cutscene lines on wall-clock audio duration
+    // (UpdateMusicWaitState only clears MSF_VOICE_PLAYING once the voice bank
+    // reports finished), so with the engine running unthrottled the tick at
+    // which the intro advances would depend on machine speed and audio buffer
+    // timing. The ported engine the trace is compared against has no audio at
+    // all, so the reference must not let audio pace the script either. Clearing
+    // the DirectSound initialised flag at +0x10 (the exact word every sound
+    // wrapper tests - loadSndBankFromWav, GetStatus, set_volume, ...) makes
+    // every bank load and getSndStat call a no-op, so UpdateMusicWaitState
+    // clears MSF_VOICE_PLAYING on the next frame and the script advances on
+    // frame counts alone. Test-only; never armed without --test-newgame.
+#ifdef _WIN32
+    if (g_pDirectSound != NULL) {
+        *(int*)((BYTE*)g_pDirectSound + 0x10) = 0;
+    }
+#endif
+
+    g_main_state_flags |= MSF_PANNING_RESET;
+    // The background quad is modulated by the global sprite colour, which the
+    // normal boot leaves at white because LogosScreen calls
+    // setSomeColor(128,128,128) before the title. This hook skips the logos,
+    // so it must reproduce that side effect or every room background renders
+    // multiplied to black (g_color_* default 0.0).
+    extern void setSomeColor(int r, int g, int b);
+    setSomeColor(128, 128, 128);
+    // re1_srand(1): normalise the platform PRNG before the room runs, the
+    // same seed both engines start a new game from (trace-v1.md "Trace origin").
+    re1_srand(1);
+    nullsub_0047eb80();
+    Task_sleep(1);
+    Task_chain((void*)game_start);
+}
+
+// ---------------------------------------------------------------------------
+// TestHooks_OnGameplayTick
+// ---------------------------------------------------------------------------
+void TestHooks_OnGameplayTick(void)
+{
+    if (s_traceFile == NULL) return;
+
+    if (!s_traceArmed) {
+        // Tick 0 is the first gameplay tick with the new-game room (mansion
+        // 1F, room 6 = ROOM106) live and the room transition finished.
+        if (g_stageId == (unsigned char)STAGE_MANSION_1F &&
+            g_roomId == (unsigned char)ROOM_MAIN_HALL &&
+            (g_main_state_flags & MSF_ROOM_TRANSITION) == 0) {
+            s_traceArmed = 1;
+        } else {
+            return;
+        }
+    }
+    s_pendingTick = 1;
+}
+
+// ---------------------------------------------------------------------------
+// FNV-1a 32-bit over (w u32 LE, h u32 LE, RGBA bytes) - trace-v1.md.
+// ---------------------------------------------------------------------------
+static unsigned int Fnv1a(const unsigned char* data, size_t size, unsigned int h)
+{
+    for (size_t i = 0; i < size; i++) {
+        h ^= data[i];
+        h *= 0x01000193u;
+    }
+    return h;
+}
+
+static unsigned int FrameHash(unsigned int w, unsigned int h, const unsigned char* rgba)
+{
+    unsigned char dims[8];
+    dims[0] = (unsigned char)(w & 0xFF);
+    dims[1] = (unsigned char)((w >> 8) & 0xFF);
+    dims[2] = (unsigned char)((w >> 16) & 0xFF);
+    dims[3] = (unsigned char)((w >> 24) & 0xFF);
+    dims[4] = (unsigned char)(h & 0xFF);
+    dims[5] = (unsigned char)((h >> 8) & 0xFF);
+    dims[6] = (unsigned char)((h >> 16) & 0xFF);
+    dims[7] = (unsigned char)((h >> 24) & 0xFF);
+
+    unsigned int hash = 0x811c9dc5u;
+    hash = Fnv1a(dims, sizeof(dims), hash);
+    hash = Fnv1a(rgba, (size_t)w * h * 4, hash);
+    return hash;
+}
+
+// ---------------------------------------------------------------------------
+// Line building helper (appends to buf, returns the new length; a truncated
+// buffer keeps growing past capacity and is clamped at the end).
+// ---------------------------------------------------------------------------
+static int Append(char* buf, size_t cap, int used, const char* fmt, ...)
+{
+    if (used < 0) return used;
+    if ((size_t)used >= cap) return (int)cap;
+
+    va_list args;
+    va_start(args, fmt);
+    int wrote = vsnprintf(buf + used, cap - (size_t)used, fmt, args);
+    va_end(args);
+
+    if (wrote < 0) return used;
+    if ((size_t)wrote >= cap - (size_t)used) return (int)cap;
+    return used + wrote;
+}
+
+// ---------------------------------------------------------------------------
+// Capture file: RE1CAP <w> <h>\n followed by top-down RGBA bytes.
+// CaptureBackbufferToRGBA copies D3D11 staging rows in order, and staging row
+// 0 is the top row, so the returned buffer is already top-down: no flip.
+// ---------------------------------------------------------------------------
+static void WriteCapture(const void* pixels, unsigned int w, unsigned int h)
+{
+    char path[1600];
+    size_t n = strlen(s_captureDir);
+    const char* sep = (n > 0 && (s_captureDir[n - 1] == '\\' || s_captureDir[n - 1] == '/'))
+                          ? "" : "\\";
+    snprintf(path, sizeof(path), "%s%sf%05u.rgba", s_captureDir, sep, s_tick);
+
+    FILE* f = fopen(path, "wb");
+    if (f == NULL) {
+        fprintf(stderr, "[oracle] cannot write capture %s\n", path);
+        return;
+    }
+    fprintf(f, "RE1CAP %u %u\n", w, h);
+    fwrite(pixels, 1, (size_t)w * h * 4, f);
+    fclose(f);
+    s_capturesWritten++;
+}
+
+// ---------------------------------------------------------------------------
+// TestHooks_OnBeforePresent - capture this tick's rendered frame while the
+// back buffer is still valid. Called from FrameRateGovernor immediately before
+// MarniPresent. With a DXGI discard swap chain the buffer read after Present
+// is undefined (observed as an all-black frame), which is why the capture
+// lives here and not in TestHooks_OnFrameCompleted.
+//
+// A tick whose screen is masked (StMask holds g_ScreenAccessReady low, so
+// FrameRateGovernor presents nothing) keeps the previous stash: the display
+// still shows the previous frame, and the trace's f= carries its hash.
+// ---------------------------------------------------------------------------
+void TestHooks_OnBeforePresent(void)
+{
+    if (s_traceFile == NULL || !s_traceArmed || !s_pendingTick) return;
+    if (s_capturedThisTick) return;
+
+    void* pixels = NULL;
+    DWORD w = 0, h = 0;
+    MarniDX* dx = Marni_DX();
+    if (dx != NULL && dx->CaptureBackbufferToRGBA(&pixels, &w, &h) && pixels != NULL) {
+        if (s_capturedPixels != NULL) free(s_capturedPixels);
+        s_capturedPixels = pixels;
+        s_capturedW = w;
+        s_capturedH = h;
+        s_capturedHash = FrameHash((unsigned int)w, (unsigned int)h, (const unsigned char*)pixels);
+        s_lastHash = s_capturedHash;
+        s_capturedThisTick = 1;
+
+        if (w != 320 || h != 240) {
+            static int warned = 0;
+            if (!warned) {
+                warned = 1;
+                fprintf(stderr, "[oracle] captured backbuffer is %ux%u, expected 320x240\n",
+                        (unsigned)w, (unsigned)h);
+            }
+        }
+        if (s_captureEvery > 0 && (s_tick % (unsigned int)s_captureEvery) == 0) {
+            WriteCapture(pixels, (unsigned int)w, (unsigned int)h);
+        }
+    } else {
+        static int warned = 0;
+        if (!warned) {
+            warned = 1;
+            fprintf(stderr, "[oracle] backbuffer capture failed\n");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TestHooks_OnFrameCompleted - emit one trace line for the tick that just ran.
+// Called from RunMessageLoop immediately after main_loop() returns; the frame
+// pixels come from the pre-present stash.
+// ---------------------------------------------------------------------------
+void TestHooks_OnFrameCompleted(void)
+{
+    if (s_traceFile == NULL || !s_traceArmed || !s_pendingTick) return;
+    s_pendingTick = 0;
+
+    unsigned int frameHash = s_capturedThisTick ? s_capturedHash : s_lastHash;
+
+    char line[16384];
+    int used = 0;
+
+    // The room token is the RDT identity the Rust side prints as
+    // `RoomId::room3()`-style `stage:room`: 1-based stage digit + the room
+    // byte (ROOM106 = stage 1, g_roomId 0x06 -> "1:6"). The leading stage
+    // digit is what names the RDT file; the room itself stays the byte.
+    used = Append(line, sizeof(line), used,
+                  "t=%u room=%u:%u rng=%u rseed=%u fade=%d:%d p=%d,%d,%d,%u,%u,%u,%d cam=%u",
+                  s_tick,
+                  (unsigned int)(g_stageId + 1),
+                  (unsigned int)g_roomId,
+                  re1_rand_state(),
+                  (unsigned int)(unsigned short)g_RandSeed,
+                  (int)g_fading_counter,
+                  (int)g_fading_state,
+                  (int)g_playerEntity.position.x,
+                  (int)g_playerEntity.position.y,
+                  (int)g_playerEntity.position.z,
+                  (unsigned int)(unsigned short)g_playerEntity.directionAngle & 0x0FFF,
+                  (unsigned int)g_playerEntity.action_behavior,
+                  (unsigned int)g_playerEntity.action_state,
+                  (int)g_playerEntity.health,
+                  (unsigned int)g_roomCameraId);
+
+    // Entity slots: 0 = player (always), i >= 1 = g_EnemiesList[i-1] only when
+    // active (status_flags & 1). The player is read through the shared Entity
+    // base layout (PlayerEntity is layout-compatible there: 0x84 state/animationId,
+    // 0x8A hit_state/isBeingAttackedFlag, 0x00 status_flags/flags, 0xC4
+    // action_ticks_counter/attackDirection).
+    //
+    // The player's position field is synced from its matrix every tick by
+    // update_player_anim. A character NPC (character_npc_update) moves through
+    // scaMatrixData.localMatrix without ever syncing `position`, so an NPC slot
+    // emits the live matrix translation - the same field arklay's Entity::pos
+    // carries.
+    for (int slot = 0; slot <= 30; slot++) {
+        const Entity* e;
+        if (slot == 0) {
+            e = (const Entity*)&g_playerEntity;
+        } else {
+            e = &g_EnemiesList[slot - 1];
+            if ((e->status_flags & 0x01) == 0) continue;
+        }
+        int px, py, pz;
+        if (slot == 0) {
+            px = (int)e->position.x;
+            py = (int)e->position.y;
+            pz = (int)e->position.z;
+        } else {
+            px = e->scaMatrixData.localMatrix.t[0];
+            py = e->scaMatrixData.localMatrix.t[1];
+            pz = e->scaMatrixData.localMatrix.t[2];
+        }
+        used = Append(line, sizeof(line), used,
+                      " e=%d,%u,%d,%d,%d,%u,%u,%u,%u,%d,%u,%u,%u",
+                      slot,
+                      (unsigned int)e->id,
+                      px, py, pz,
+                      (unsigned int)(unsigned short)e->angle & 0x0FFF,
+                      (unsigned int)e->state,
+                      (unsigned int)e->action_behavior,
+                      (unsigned int)e->action_state,
+                      (int)e->health,
+                      (unsigned int)e->hit_state,
+                      (unsigned int)e->status_flags,
+                      (unsigned int)e->action_ticks_counter);
+    }
+
+    used = Append(line, sizeof(line), used, " f=%u\n", frameHash);
+    if ((size_t)used > sizeof(line) - 1) used = (int)sizeof(line) - 1;
+
+    // The stash is consumed by this line; the next tick captures afresh.
+    if (s_capturedPixels != NULL) {
+        free(s_capturedPixels);
+        s_capturedPixels = NULL;
+    }
+    s_capturedThisTick = 0;
+
+    fwrite(line, 1, (size_t)used, s_traceFile);
+    fflush(s_traceFile);
+
+    s_tick++;
+
+    // Exit cleanly once the requested number of traced ticks has been emitted.
+    // The trace is already flushed and closed; no window/D3D teardown is
+    // needed for the trace to be intact.
+    if (s_exitAfter > 0 && s_tick >= (unsigned int)s_exitAfter) {
+        fflush(s_traceFile);
+        fclose(s_traceFile);
+        s_traceFile = NULL;
+        fprintf(stderr, "[oracle] done: %u traced ticks, %u captures\n",
+                s_tick, s_capturesWritten);
+        exit(0);
+    }
+}

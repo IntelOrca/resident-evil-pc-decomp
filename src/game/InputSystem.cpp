@@ -5,6 +5,7 @@
 #include "../platform/platform.h"
 #include "../marni/MarniInput.h"
 #include "../marni/MarniXInput.h"
+#include "TestHooks.h"   // oracle hook: --test-press pad injection
 #include <cstring>
 
 // ============================================================================
@@ -276,6 +277,9 @@ DWORD PlayerPad_Update(void)
 	// Part 3: Read new input into the raw held variable (0x00bf0a04)
 	if ((g_main_state_flags2 & MSF2_ATTRACT_DEMO) == 0) {
 		newHeldRaw = ReadPadBoth();
+		// oracle hook: --test-press injects raw pad bits for the traced window
+		// (no-op without the flag).
+		newHeldRaw |= TestHooks_PadOverride();
 		g_RawPadHeld = newHeldRaw;
 	} else {
 		if (((g_message_flags & 0x0200) == 0) || (g_DemoTimerCur == 0)) {
