@@ -463,6 +463,10 @@ void InitializeGame(void)
             }
         } else {
             LoadAttractModePlayerData();
+            // oracle hook: log the loaded reel and apply --test-demo-max to
+            // the header's demoTimerMax after the file load. No-op without
+            // --test-demo.
+            TestHooks_OnDemoDataLoaded();
             if (g_bDcMode) {
                 g_playerEntity.health = (short)((g_playerEntity.id & 1) * -44 + 140);
                 g_PlayerHealthCopy = g_playerEntity.health;
