@@ -6,6 +6,10 @@
 // behaviour of the build is unchanged.
 //
 //   --test-newgame <0|1>       boot straight into a new game (0 Chris, 1 Jill)
+//   --test-room <3hex>         boot the new game directly into this room
+//                              (stage digit + room byte, e.g. 101), spawning
+//                              the player at the first walk zone's centre and
+//                              arming the trace on that room instead of 106
 //   --test-trace <path>        write the per-tick oracle trace to <path>
 //   --test-capture-every <N>   write a captured frame every N traced ticks
 //   --test-capture-dir <path>  directory for the f%05d.rgba captures
@@ -29,6 +33,18 @@ int TestHooks_NewGameCharacter(void);
 // the intro FMV, then chains task 0 to game_start. Call from task context
 // (the tail of load_global_assets).
 void TestHooks_StartNewGame(void);
+
+// TRUE when --test-room was passed.
+int TestHooks_RoomArmed(void);
+
+// Apply the --test-room stage/room override. Called from InitializeGame just
+// before init_room(), after the new-game path has seeded the character.
+void TestHooks_ApplyRoomOverride(void);
+
+// Place the player at the overridden room's first walk zone centre (the spawn
+// the port's headless `--room` boot uses). Called from InitializeGame right
+// after init_room() has loaded the room.
+void TestHooks_PlaceRoomSpawn(void);
 
 // TRUE when --test-nolimit was passed (RunMessageLoop focus/pacing bypass).
 int TestHooks_NoLimit(void);

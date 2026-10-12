@@ -7,6 +7,7 @@
 #include "../marni/MarniSystem.h"
 #include "FileLoader.h"
 #include "SpriteRenderer.h"
+#include "TestHooks.h"
 #include <cstdio>
 #include <cstring>
 #include "../system/AssetPath.h"
@@ -576,6 +577,11 @@ void InitializeGame(void)
     g_loadDataDestPointer = g_DataBuffer;
     g_BGM_STATE = 0xFF;
 
+    // oracle hook: --test-room overrides the new-game room before anything
+    // reads it (room SFX, BGM and init_room all key off g_stageId/g_roomId).
+    // No-op without the flag.
+    TestHooks_ApplyRoomOverride();
+
     load_room_sfx(0);
     load_character_sfx(g_playerEntity.id & 1);
 
@@ -584,6 +590,11 @@ void InitializeGame(void)
     g_main_state_flags = g_main_state_flags & ~MSF_ROOM_TRANSITION;
 
     init_room();
+
+    // oracle hook: place the player at the overridden room's first walk zone
+    // centre, the spawn the port's headless `--room` boot uses. No-op without
+    // --test-room.
+    TestHooks_PlaceRoomSpawn();
 
     g_AttractModeIdleTimer = 1;
     update_room_bgm();

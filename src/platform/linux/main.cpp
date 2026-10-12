@@ -20,6 +20,7 @@
 #include "marni/MarniDX.h"
 #include "marni/MarniGLFuncs.h"
 #include "marni/MarniSystem.h"
+#include "game/TestHooks.h"
 
 // 0x00441f26: the original's frame interval, 0x21 == 33 ms == 30 ticks/s. The
 // play clock and every scripted wait are built on it.
@@ -32,6 +33,23 @@ static const BOOL kFrameLimiterEnabled = TRUE;
 
 int main(int argc, char** argv)
 {
+    // oracle hook: join argv into a command line and parse the --test-* flags
+    // once, before anything runs. With none of them present every hook is
+    // inert, exactly like the Windows build's WinMain path.
+    {
+        static char testCmdLine[4096];
+        size_t used = 0;
+        for (int i = 1; i < argc && used < sizeof(testCmdLine) - 2; ++i) {
+            size_t len = strlen(argv[i]);
+            if (used + len + 1 >= sizeof(testCmdLine) - 1) break;
+            if (used > 0) testCmdLine[used++] = ' ';
+            memcpy(testCmdLine + used, argv[i], len);
+            used += len;
+        }
+        testCmdLine[used] = '\0';
+        TestHooks_Init(testCmdLine);
+    }
+
     // Crash diagnostics and the single-instance guard, in the game root like
     // their Windows counterparts (WinMain does the same, in this order).
     crashlog_install();
@@ -204,12 +222,20 @@ int main(int argc, char** argv)
         }
 
         if (!running || g_bQuitFlag) break;
+
+        // oracle hook: --test-nolimit forces the focus flags every iteration
+        // so window focus loss cannot pause the pump.
+        if (TestHooks_NoLimit()) {
+            g_bWindowFocused = TRUE;
+            g_bWindowActive = TRUE;
+        }
         if (!g_bWindowFocused) { SDL_Delay(1); continue; }
 
         DWORD now = plat_time_ms();
 
         // 0x00441f0c: the frame limiter. Skip a tick that arrives early.
-        if (kFrameLimiterEnabled) {
+        // oracle hook: --test-nolimit skips the pacing entirely.
+        if (kFrameLimiterEnabled && !TestHooks_NoLimit()) {
             BOOL bSkipFrame = FALSE;
             if (g_bUseFrameSkip == 1) {
                 if (!g_bFrameSkipDetected) {
@@ -267,7 +293,14 @@ int main(int argc, char** argv)
             g_bMCINotifyFlag = TRUE;
         }
 
-        if (main_loop() == 0) break;
+        int loopResult = main_loop();
+
+        // oracle hook: the frame for this main_loop() call has been presented
+        // (FrameRateGovernor). Emit the pending per-tick trace line from the
+        // presented back buffer. No-op unless --test-trace armed the trace.
+        TestHooks_OnFrameCompleted();
+
+        if (loopResult == 0) break;
 
         if (getenv("RE1_INPUT_DEBUG") != NULL && (presented % 30) == 0) {
             fprintf(stderr, "[IN] f=%d keyMap[11]=0x%02x kbdCurr=0x%08x kbdPrev=0x%08x "
