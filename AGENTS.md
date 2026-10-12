@@ -25,6 +25,18 @@ original's quirks are preserved rather than cleaned up.
   (SDL2 + OpenGL 3.3 core, ffmpeg for FMV). Verified running on Ubuntu and
   CachyOS, keyboard and gamepad. See `docs/LINUX_PORT.md`.
 
+- **Game OPTIONS menu (port-added, no original address).** With the
+  title font present, every mode's title menu is NEW GAME / LOAD GAME / EXTRA
+  (only while the Battle Game is offered) / OPTIONS. OPTIONS chains
+  `game_options_state` (`src/game/GameOptions.cpp`), a state of its own with
+  four pages: DISPLAY, INPUT, GAME (the `[Game]` keys and the region; Mode and
+  region are written to config.ini and take effect on the next start) and
+  BONUS. Bonuses (outfits, bonus weapons) are kept across saves and modes in
+  `<save folder>/bonus.dat` (`src/game/Bonus.h` has the unlock rules); a chosen
+  outfit overrides every release's costume logic in `LoadEntityEMD`, and also
+  dresses that character's cutscene NPC (`LoadNpcOutfit`: the outfit's mesh and
+  texture on the NPC's own skeleton and animations, as the DC builds its own).
+
 ## Project goal
 
 The USA release is no longer the end of the project. The goal now is to **add
@@ -123,7 +135,7 @@ of guessed. Run them from the repo root.
 
 **Asset and file inspection**
 - `dump_tim.py` — parse a PSX TIM and write a viewable PPM.
-- `gen_title_font.py` — cut the title-option typeface (A-Z; nine letters hand-drawn) out of the DC `BT367OAB.TIM` into a BMFont atlas and the migrator's `TitleFontGlyphs.inc`. The Saturn tab writes it as `SATURN/Data/TITLEFNT.BIN`; `src/game/saturn/SaturnTitle.cpp` draws the Saturn title menu (NEW GAME / LOAD GAME / EXTRA > BATTLE GAME / BACK) with it.
+- `gen_title_font.py` — cut the title-option typeface (A-Z; nine letters hand-drawn) out of the DC `BT367OAB.TIM` into a BMFont atlas and the migrator's `TitleFontGlyphs.inc`. The migrator's PC tab writes it into the base tree as `<USA|JPN>/Data/TITLEFNT.BIN`; `src/game/saturn/SaturnTitle.cpp` turns it into the title menu's text strips for every mode (NEW GAME / LOAD GAME / EXTRA > BATTLE GAME / BACK / OPTIONS).
 - `dump_ivm.py` — parse an `.IVM` item view (TIM + TMD), render its texture page to a PNG and print both headers.
 - `dump_item_pix.py` — render rows of an item sprite sheet (`ITEM_ALL.PIX` / `Item_all_dc.pix`) through `STATUS.TIM`'s palette as a PNG grid.
 - `dump_esp_sprite.py` — decode a sprite region of an effspr TIM (pixels + CLUT, with the STP bit).

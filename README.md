@@ -261,11 +261,6 @@ The menu needs the title font, `Data/TITLEFNT.BIN`, which the asset migrator's
 PC tab writes; without it the title keeps the art the release shipped with and
 has no OPTIONS item.
 
-Its sounds are `Sound/cursor`, `Sound/decide` and `Sound/cancel` (`.wav`, or the
-`.ogg` beside it): cursor for moving and changing a value, decide for
-confirming, cancel for going back. A missing file falls back to the title's own
-sound.
-
 ### Options menu (in game)
 
 The button that opened the original options screen (`Start`+`Select` by
@@ -273,8 +268,7 @@ default, the OPTIONS binding) now opens the same menu in game, cut down to
 **DISPLAY**, **INPUT**, **BACK TO TITLE** (asks for confirmation; unsaved
 progress is lost) and **BACK** (Esc / cancel does the same) to return to the
 game. The pages are the title menu's, so a rebinding made here applies at once.
-The room's music keeps playing underneath. The original options screen
-(`src/game/OptionsMenu.cpp`) is still in the tree but is no longer opened.
+The room's music keeps playing underneath.
 
 ### Asset version (USA / JPN)
 
