@@ -12,6 +12,7 @@
 #include "../marni/MarniDX.h"
 #include "../platform/platform.h"
 
+#include <cctype>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -23,6 +24,9 @@
 static int   s_newGameArmed     = 0;
 static int   s_newGameCharacter = 0;
 static int   s_noLimit          = 0;
+static int   s_roomArmed        = 0;
+static int   s_roomStage        = 0;   // 0-based g_stageId
+static int   s_roomId           = 0;   // room byte
 
 static char  s_tracePath[1024]  = {};
 static char  s_captureDir[1024] = {};
@@ -84,6 +88,25 @@ static void TestHooks_Parse(const char* cmdLine)
         if (strcmp(t, "--test-newgame") == 0 && i + 1 < tokenCount) {
             s_newGameArmed = 1;
             s_newGameCharacter = atoi(tokens[++i]);
+        } else if (strcmp(t, "--test-room") == 0 && i + 1 < tokenCount) {
+            // Three hex digits: stage (1-based) + room byte, e.g. 101.
+            const char* v = tokens[++i];
+            if (strlen(v) == 3 &&
+                isxdigit((unsigned char)v[0]) &&
+                isxdigit((unsigned char)v[1]) &&
+                isxdigit((unsigned char)v[2])) {
+                int stage = (int)(v[0] <= '9' ? v[0] - '0' : (v[0] | 0x20) - 'a' + 10);
+                int hi    = (int)(v[1] <= '9' ? v[1] - '0' : (v[1] | 0x20) - 'a' + 10);
+                int lo    = (int)(v[2] <= '9' ? v[2] - '0' : (v[2] | 0x20) - 'a' + 10);
+                s_roomStage = stage - 1;
+                s_roomId = (hi << 4) | lo;
+                s_roomArmed = 1;
+                // A room boot is still a new game: it needs the character
+                // select transition and the new-game player seeding.
+                s_newGameArmed = 1;
+            } else {
+                fprintf(stderr, "[oracle] --test-room expects three hex digits (e.g. 101)\n");
+            }
         } else if (strcmp(t, "--test-trace") == 0 && i + 1 < tokenCount) {
             strncpy(s_tracePath, tokens[++i], sizeof(s_tracePath) - 1);
         } else if (strcmp(t, "--test-capture-every") == 0 && i + 1 < tokenCount) {
@@ -143,6 +166,9 @@ void TestHooks_Init(const char* cmdLine)
 
     if (s_newGameArmed) {
         fprintf(stderr, "[oracle] --test-newgame char=%d\n", s_newGameCharacter);
+    }
+    if (s_roomArmed) {
+        fprintf(stderr, "[oracle] --test-room stage=%d room=0x%02X\n", s_roomStage + 1, s_roomId);
     }
     if (s_noLimit) {
         fprintf(stderr, "[oracle] --test-nolimit\n");
@@ -228,12 +254,12 @@ void TestHooks_StartNewGame(void)
     // wrapper tests - loadSndBankFromWav, GetStatus, set_volume, ...) makes
     // every bank load and getSndStat call a no-op, so UpdateMusicWaitState
     // clears MSF_VOICE_PLAYING on the next frame and the script advances on
-    // frame counts alone. Test-only; never armed without --test-newgame.
-#ifdef _WIN32
+    // frame counts alone. Both platform sound classes carry the same
+    // shared-wrapper gate DWORD at +0x10 (MarniSound.h / linux/audio.cpp), so
+    // the hack is not Windows-only. Test-only; never armed without --test-newgame.
     if (g_pDirectSound != NULL) {
         *(int*)((BYTE*)g_pDirectSound + 0x10) = 0;
     }
-#endif
 
     g_main_state_flags |= MSF_PANNING_RESET;
     // The background quad is modulated by the global sprite colour, which the
@@ -252,6 +278,54 @@ void TestHooks_StartNewGame(void)
 }
 
 // ---------------------------------------------------------------------------
+// --test-room: a new game that boots directly into the requested room. The
+// room override lands before init_room, the spawn placement after it, so the
+// load uses the requested room and the player starts at the room's first walk
+// zone centre (the port's headless `--room` spawn).
+// ---------------------------------------------------------------------------
+int TestHooks_RoomArmed(void)
+{
+    return s_roomArmed;
+}
+
+void TestHooks_ApplyRoomOverride(void)
+{
+    if (!s_roomArmed) return;
+    g_stageId = (unsigned char)s_roomStage;
+    g_roomId = (unsigned char)s_roomId;
+}
+
+void TestHooks_PlaceRoomSpawn(void)
+{
+    if (!s_roomArmed) return;
+
+    int px = 0;
+    int pz = 0;
+    if (g_RdtPointer != NULL && g_RdtPointer->walk_zones != NULL) {
+        unsigned char* base = (unsigned char*)g_RdtPointer->walk_zones;
+        if (base[0] > 0) {
+            short x1 = *(short*)(base + 2);
+            short z1 = *(short*)(base + 4);
+            short x2 = *(short*)(base + 6);
+            short z2 = *(short*)(base + 8);
+            px = ((int)x1 + (int)x2) / 2;
+            pz = ((int)z1 + (int)z2) / 2;
+        }
+    }
+
+    g_playerEntity.scaMatrixData.localMatrix.t[0] = px;
+    g_playerEntity.scaMatrixData.localMatrix.t[1] = 0;
+    g_playerEntity.scaMatrixData.localMatrix.t[2] = pz;
+    g_playerEntity.position.x = (short)px;
+    g_playerEntity.position.y = 0;
+    g_playerEntity.position.z = (short)pz;
+    g_playerEntity.posY = 0;
+    g_playerEntity.directionAngle = 0;
+
+    fprintf(stderr, "[oracle] --test-room spawn (%d,%d)\n", px, pz);
+}
+
+// ---------------------------------------------------------------------------
 // TestHooks_OnGameplayTick
 // ---------------------------------------------------------------------------
 void TestHooks_OnGameplayTick(void)
@@ -259,10 +333,16 @@ void TestHooks_OnGameplayTick(void)
     if (s_traceFile == NULL) return;
 
     if (!s_traceArmed) {
-        // Tick 0 is the first gameplay tick with the new-game room (mansion
-        // 1F, room 6 = ROOM106) live and the room transition finished.
-        if (g_stageId == (unsigned char)STAGE_MANSION_1F &&
-            g_roomId == (unsigned char)ROOM_MAIN_HALL &&
+        // Tick 0 is the first gameplay tick with the traced room live and the
+        // room transition finished: the room `--test-room` asked for, or the
+        // new-game room (mansion 1F, room 6 = ROOM106) without it.
+        int stageMatches = s_roomArmed
+            ? (g_stageId == (unsigned char)s_roomStage)
+            : (g_stageId == (unsigned char)STAGE_MANSION_1F);
+        int roomMatches = s_roomArmed
+            ? (g_roomId == (unsigned char)s_roomId)
+            : (g_roomId == (unsigned char)ROOM_MAIN_HALL);
+        if (stageMatches && roomMatches &&
             (g_main_state_flags & MSF_ROOM_TRANSITION) == 0) {
             s_traceArmed = 1;
         } else {
@@ -330,8 +410,14 @@ static void WriteCapture(const void* pixels, unsigned int w, unsigned int h)
 {
     char path[1600];
     size_t n = strlen(s_captureDir);
-    const char* sep = (n > 0 && (s_captureDir[n - 1] == '\\' || s_captureDir[n - 1] == '/'))
-                          ? "" : "\\";
+#ifdef _WIN32
+    const char* sep = "\\";
+#else
+    const char* sep = "/";
+#endif
+    if (n > 0 && (s_captureDir[n - 1] == '\\' || s_captureDir[n - 1] == '/')) {
+        sep = "";
+    }
     snprintf(path, sizeof(path), "%s%sf%05u.rgba", s_captureDir, sep, s_tick);
 
     FILE* f = fopen(path, "wb");
@@ -421,9 +507,13 @@ void TestHooks_OnFrameCompleted(void)
                   (unsigned int)(unsigned short)g_RandSeed,
                   (int)g_fading_counter,
                   (int)g_fading_state,
-                  (int)g_playerEntity.position.x,
-                  (int)g_playerEntity.position.y,
-                  (int)g_playerEntity.position.z,
+                  // The live player position is the matrix translation: the
+                  // `position` mirror is only synced by the init and some walk
+                  // handlers, so a grabbed/bitten player keeps a stale value
+                  // there. Entity slots use the matrix for the same reason.
+                  g_playerEntity.scaMatrixData.localMatrix.t[0],
+                  g_playerEntity.scaMatrixData.localMatrix.t[1],
+                  g_playerEntity.scaMatrixData.localMatrix.t[2],
                   (unsigned int)(unsigned short)g_playerEntity.directionAngle & 0x0FFF,
                   (unsigned int)g_playerEntity.action_behavior,
                   (unsigned int)g_playerEntity.action_state,
@@ -436,11 +526,10 @@ void TestHooks_OnFrameCompleted(void)
     // 0x8A hit_state/isBeingAttackedFlag, 0x00 status_flags/flags, 0xC4
     // action_ticks_counter/attackDirection).
     //
-    // The player's position field is synced from its matrix every tick by
-    // update_player_anim. A character NPC (character_npc_update) moves through
-    // scaMatrixData.localMatrix without ever syncing `position`, so an NPC slot
-    // emits the live matrix translation - the same field arklay's Entity::pos
-    // carries.
+    // Every slot, the player included, emits the live matrix translation: the
+    // `position` field is only synced by the init and some walk handlers, so a
+    // grabbed/bitten player or a scripted NPC keeps a stale value there. The
+    // matrix is what arklay's Entity::pos carries.
     for (int slot = 0; slot <= 30; slot++) {
         const Entity* e;
         if (slot == 0) {
@@ -449,16 +538,9 @@ void TestHooks_OnFrameCompleted(void)
             e = &g_EnemiesList[slot - 1];
             if ((e->status_flags & 0x01) == 0) continue;
         }
-        int px, py, pz;
-        if (slot == 0) {
-            px = (int)e->position.x;
-            py = (int)e->position.y;
-            pz = (int)e->position.z;
-        } else {
-            px = e->scaMatrixData.localMatrix.t[0];
-            py = e->scaMatrixData.localMatrix.t[1];
-            pz = e->scaMatrixData.localMatrix.t[2];
-        }
+        int px = e->scaMatrixData.localMatrix.t[0];
+        int py = e->scaMatrixData.localMatrix.t[1];
+        int pz = e->scaMatrixData.localMatrix.t[2];
         used = Append(line, sizeof(line), used,
                       " e=%d,%u,%d,%d,%d,%u,%u,%u,%u,%d,%u,%u,%u",
                       slot,
