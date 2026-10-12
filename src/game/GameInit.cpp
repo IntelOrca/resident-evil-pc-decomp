@@ -226,6 +226,15 @@ void load_global_assets(void)
     };
     CreateTexturedQuad(0, 0x2F, rectConfig);
 
+    // oracle hook: test-only direct attract demo boot (--test-demo). Replaces
+    // the chain to the logos screen with the title's idle-timeout entry, so
+    // game_start loads pdemoN.dat. Takes precedence over --test-newgame when
+    // both are passed. No-op without the flag.
+    if (TestHooks_DemoArmed()) {
+        TestHooks_StartAttractDemo();
+        return;
+    }
+
     // oracle hook: test-only direct new game (--test-newgame). Replaces the
     // chain to the logos screen with the character-select case 6 transition
     // and DisplayIntroAndStartGame minus the FMV. No-op without the flag.

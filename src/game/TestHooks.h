@@ -10,6 +10,12 @@
 //                              (stage digit + room byte, e.g. 101), spawning
 //                              the player at the first walk zone's centre and
 //                              arming the trace on that room instead of 106
+//   --test-demo <0..3>         boot straight into attract demo reel N
+//                              (JPN/DATA/pdemoN.dat), reproducing the title's
+//                              idle-timeout entry; the trace arms on the
+//                              reel's recorded room
+//   --test-demo-max <ticks>    override the reel's recorded length (the
+//                              pdemo header's demoTimerMax) after the load
 //   --test-trace <path>        write the per-tick oracle trace to <path>
 //   --test-capture-every <N>   write a captured frame every N traced ticks
 //   --test-capture-dir <path>  directory for the f%05d.rgba captures
@@ -33,6 +39,22 @@ int TestHooks_NewGameCharacter(void);
 // the intro FMV, then chains task 0 to game_start. Call from task context
 // (the tail of load_global_assets).
 void TestHooks_StartNewGame(void);
+
+// TRUE when --test-demo was passed.
+int TestHooks_DemoArmed(void);
+
+// Boots straight into attract demo reel N: pins g_CurrentAttractModeId before
+// game_start so LoadAttractModePlayerData loads pdemoN.dat, sets
+// MSF2_ATTRACT_DEMO and restores the state the title's idle timeout leaves
+// (title_state case 0 reached from update_title_options state 3), then chains
+// task 0 to game_start. Call from task context (the tail of
+// load_global_assets).
+void TestHooks_StartAttractDemo(void);
+
+// Called from InitializeGame immediately after LoadAttractModePlayerData:
+// logs the loaded reel's identity and applies --test-demo-max to
+// g_DemoTimerMax. No-op unless --test-demo was passed.
+void TestHooks_OnDemoDataLoaded(void);
 
 // TRUE when --test-room was passed.
 int TestHooks_RoomArmed(void);

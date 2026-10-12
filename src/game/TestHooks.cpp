@@ -27,6 +27,9 @@ static int   s_noLimit          = 0;
 static int   s_roomArmed        = 0;
 static int   s_roomStage        = 0;   // 0-based g_stageId
 static int   s_roomId           = 0;   // room byte
+static int   s_demoArmed        = 0;
+static int   s_demoId           = 0;   // pdemoN.dat index, 0..3
+static int   s_demoMaxOverride  = 0;   // --test-demo-max, 0 = file header
 
 static char  s_tracePath[1024]  = {};
 static char  s_captureDir[1024] = {};
@@ -107,6 +110,16 @@ static void TestHooks_Parse(const char* cmdLine)
             } else {
                 fprintf(stderr, "[oracle] --test-room expects three hex digits (e.g. 101)\n");
             }
+        } else if (strcmp(t, "--test-demo") == 0 && i + 1 < tokenCount) {
+            int id = atoi(tokens[++i]);
+            if (id < 0 || id > 3) {
+                fprintf(stderr, "[oracle] --test-demo expects 0..3\n");
+            } else {
+                s_demoArmed = 1;
+                s_demoId = id;
+            }
+        } else if (strcmp(t, "--test-demo-max") == 0 && i + 1 < tokenCount) {
+            s_demoMaxOverride = atoi(tokens[++i]);
         } else if (strcmp(t, "--test-trace") == 0 && i + 1 < tokenCount) {
             strncpy(s_tracePath, tokens[++i], sizeof(s_tracePath) - 1);
         } else if (strcmp(t, "--test-capture-every") == 0 && i + 1 < tokenCount) {
@@ -170,6 +183,10 @@ void TestHooks_Init(const char* cmdLine)
     if (s_roomArmed) {
         fprintf(stderr, "[oracle] --test-room stage=%d room=0x%02X\n", s_roomStage + 1, s_roomId);
     }
+    if (s_demoArmed) {
+        fprintf(stderr, "[oracle] --test-demo id=%d%s\n", s_demoId,
+                s_demoMaxOverride > 0 ? " (max override armed)" : "");
+    }
     if (s_noLimit) {
         fprintf(stderr, "[oracle] --test-nolimit\n");
     }
@@ -215,6 +232,31 @@ unsigned int TestHooks_PadOverride(void)
 }
 
 // ---------------------------------------------------------------------------
+// TestHooks_SilenceSound
+//
+// oracle hook: silence the sound system for the deterministic run.
+// Voice playback gates cutscene lines on wall-clock audio duration
+// (UpdateMusicWaitState only clears MSF_VOICE_PLAYING once the voice bank
+// reports finished), so with the engine running unthrottled the tick at
+// which a scripted scene advances would depend on machine speed and audio
+// buffer timing. The ported engine the trace is compared against has no audio
+// at all, so the reference must not let audio pace the script either. Clearing
+// the DirectSound initialised flag at +0x10 (the exact word every sound
+// wrapper tests - loadSndBankFromWav, GetStatus, set_volume, ...) makes
+// every bank load and getSndStat call a no-op, so UpdateMusicWaitState
+// clears MSF_VOICE_PLAYING on the next frame and the script advances on
+// frame counts alone. Both platform sound classes carry the same
+// shared-wrapper gate DWORD at +0x10 (MarniSound.h / linux/audio.cpp), so
+// the hack is not Windows-only. Test-only; only called from the armed hooks.
+// ---------------------------------------------------------------------------
+static void TestHooks_SilenceSound(void)
+{
+    if (g_pDirectSound != NULL) {
+        *(int*)((BYTE*)g_pDirectSound + 0x10) = 0;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // TestHooks_StartNewGame
 //
 // Faithful reproduction of CharacterSelectionScreen's case 6 (case_6, source
@@ -242,24 +284,7 @@ void TestHooks_StartNewGame(void)
 
     // DisplayIntroAndStartGame with the FMV request omitted.
     sounds_reset();
-
-    // oracle hook: silence the sound system for the deterministic run.
-    // Voice playback gates cutscene lines on wall-clock audio duration
-    // (UpdateMusicWaitState only clears MSF_VOICE_PLAYING once the voice bank
-    // reports finished), so with the engine running unthrottled the tick at
-    // which the intro advances would depend on machine speed and audio buffer
-    // timing. The ported engine the trace is compared against has no audio at
-    // all, so the reference must not let audio pace the script either. Clearing
-    // the DirectSound initialised flag at +0x10 (the exact word every sound
-    // wrapper tests - loadSndBankFromWav, GetStatus, set_volume, ...) makes
-    // every bank load and getSndStat call a no-op, so UpdateMusicWaitState
-    // clears MSF_VOICE_PLAYING on the next frame and the script advances on
-    // frame counts alone. Both platform sound classes carry the same
-    // shared-wrapper gate DWORD at +0x10 (MarniSound.h / linux/audio.cpp), so
-    // the hack is not Windows-only. Test-only; never armed without --test-newgame.
-    if (g_pDirectSound != NULL) {
-        *(int*)((BYTE*)g_pDirectSound + 0x10) = 0;
-    }
+    TestHooks_SilenceSound();
 
     g_main_state_flags |= MSF_PANNING_RESET;
     // The background quad is modulated by the global sprite colour, which the
@@ -275,6 +300,93 @@ void TestHooks_StartNewGame(void)
     nullsub_0047eb80();
     Task_sleep(1);
     Task_chain((void*)game_start);
+}
+
+// ---------------------------------------------------------------------------
+// --test-demo: boot straight into an attract demo reel.
+// ---------------------------------------------------------------------------
+int TestHooks_DemoArmed(void)
+{
+    return s_demoArmed;
+}
+
+// ---------------------------------------------------------------------------
+// TestHooks_StartAttractDemo
+//
+// Reproduces the state the title's idle timeout leaves when it chains
+// game_start, without running the title/logos/FMV states:
+//
+//   update_title_options, g_titleMode 0 case 2 (TitleScreen.cpp:612): the
+//   idle countdown g_titleDemoTime hits 0 and arms the fade-out
+//   (g_fade_type_id 2, g_fading_counter 0x400). Case 3 waits for the fade to
+//   reach black and then (TitleScreen.cpp:627) sets g_titleSelectionId = 0,
+//   pins g_fading_state = 0x7FFF / g_fading_counter = 0 and calls
+//   title_exit_loop() (g_titleLoopFlag = 0, MSF_SCREEN_STANDALONE). title_state
+//   then runs case 0: nullsub_0047eb80(), sets MSF2_ATTRACT_DEMO and chains
+//   game_start. (The Task_chain(logos_state) that follows in that case is
+//   unreachable: Task_chain yields and the task restarts at game_start.)
+//
+// g_CurrentAttractModeId is pinned BEFORE game_start so
+// LoadAttractModePlayerData loads pdemoN.dat. The real title lets it cycle
+// 0..3: the load copies reels[g_CurrentAttractModeId] and then advances the
+// index, so reel N is what the next title timeout would play. The 0xFC00
+// black fade-in of the g_titleMode 1 "options" path is NOT part of this state.
+//
+// The opening FMV is not requested (MSF_FMV_REQUEST stays clear), so
+// game_start runs the reel's recorded room directly.
+// ---------------------------------------------------------------------------
+void TestHooks_StartAttractDemo(void)
+{
+    g_CurrentAttractModeId = (WORD)s_demoId;
+    g_main_state_flags2 |= MSF2_ATTRACT_DEMO;
+
+    g_titleSelectionId = 0;
+    g_titleLoopFlag = 0;
+    g_main_state_flags = (g_main_state_flags & ~MSF_SCREEN_MODE_MASK) | MSF_SCREEN_STANDALONE;
+    g_fading_state = 0x7FFF;
+    g_fading_counter = 0;
+
+    nullsub_0047eb80();
+    TestHooks_SilenceSound();
+
+    // The attract path's own PRNG normalisation is game_loop's srand(0) once
+    // MSF2_ATTRACT_DEMO is set (GameLoop.cpp:61-64) - the PC attract reels were
+    // recorded against that seed. Pinning it here as well makes anything
+    // InitializeGame draws before game_loop runs reproducible too.
+    // (LoadAttractModePlayerData itself does not reseed.)
+    re1_srand(0);
+
+    Task_chain((void*)game_start);
+}
+
+// ---------------------------------------------------------------------------
+// TestHooks_OnDemoDataLoaded - called from InitializeGame right after
+// LoadAttractModePlayerData scattered pdemoN.dat over the globals. Logs the
+// reel identity (for the run report) and applies --test-demo-max, which must
+// land after the file load because the header's demoTimerMax is what the load
+// copies into g_DemoTimerMax. No-op without --test-demo.
+// ---------------------------------------------------------------------------
+void TestHooks_OnDemoDataLoaded(void)
+{
+    if (!s_demoArmed) return;
+
+    fprintf(stderr,
+            "[oracle] demo reel %d loaded: stage=%u room=0x%02X char=%u "
+            "pos=(%d,%d) dir=%d demoTimerCur=%d demoTimerMax=%d\n",
+            s_demoId,
+            (unsigned)g_AttractDemoData.stageId,
+            (unsigned)g_AttractDemoData.roomId,
+            (unsigned)g_AttractDemoData.characterId,
+            (int)g_AttractDemoData.playerPosX,
+            (int)g_AttractDemoData.playerPosZ,
+            (int)g_AttractDemoData.playerDirAngle,
+            (int)g_DemoTimerCur,
+            (int)g_DemoTimerMax);
+
+    if (s_demoMaxOverride > 0) {
+        g_DemoTimerMax = (short)s_demoMaxOverride;
+        fprintf(stderr, "[oracle] --test-demo-max: demoTimerMax=%d\n", (int)g_DemoTimerMax);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -334,14 +446,24 @@ void TestHooks_OnGameplayTick(void)
 
     if (!s_traceArmed) {
         // Tick 0 is the first gameplay tick with the traced room live and the
-        // room transition finished: the room `--test-room` asked for, or the
-        // new-game room (mansion 1F, room 6 = ROOM106) without it.
-        int stageMatches = s_roomArmed
-            ? (g_stageId == (unsigned char)s_roomStage)
-            : (g_stageId == (unsigned char)STAGE_MANSION_1F);
-        int roomMatches = s_roomArmed
-            ? (g_roomId == (unsigned char)s_roomId)
-            : (g_roomId == (unsigned char)ROOM_MAIN_HALL);
+        // room transition finished: the room `--test-room` asked for, the
+        // attract reel's own recorded room under --test-demo, or the new-game
+        // room (mansion 1F, room 6 = ROOM106) without either flag.
+        int stageMatches;
+        int roomMatches;
+        if (s_roomArmed) {
+            stageMatches = (g_stageId == (unsigned char)s_roomStage);
+            roomMatches = (g_roomId == (unsigned char)s_roomId);
+        } else if (s_demoArmed) {
+            // g_AttractDemoData still holds the pdemoN.dat header the reel was
+            // loaded from (LoadAttractModePlayerData only advances the
+            // g_CurrentAttractModeId cycle, not the loaded header).
+            stageMatches = (g_stageId == g_AttractDemoData.stageId);
+            roomMatches = (g_roomId == g_AttractDemoData.roomId);
+        } else {
+            stageMatches = (g_stageId == (unsigned char)STAGE_MANSION_1F);
+            roomMatches = (g_roomId == (unsigned char)ROOM_MAIN_HALL);
+        }
         if (stageMatches && roomMatches &&
             (g_main_state_flags & MSF_ROOM_TRANSITION) == 0) {
             s_traceArmed = 1;
