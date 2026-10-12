@@ -5,6 +5,7 @@
 #include "dc/ItemTables.h"
 #include "dc/Items.h"
 #include "saturn/SaturnBattle.h"
+#include "Bonus.h"
 #include "../marni/MarniSystem.h"
 #include "FileLoader.h"
 #include "SpriteRenderer.h"
@@ -442,6 +443,9 @@ void InitializeGame(void)
 
         if ((g_main_state_flags2 & MSF2_ATTRACT_DEMO) == 0) {
             InitPlayerData();
+            // Port: the bonus weapons switched on in OPTIONS > BONUS go into
+            // the item box (Bonus.h); the start inventory stays as built.
+            bonus_grant_start_weapons();
             /*
             * chris: 140hp
             * jill: 96hp

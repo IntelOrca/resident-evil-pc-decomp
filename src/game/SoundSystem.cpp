@@ -803,6 +803,24 @@ void bgm_play_group_channel(unsigned char group, int ch)
     }
 }
 
+// Port-added: the other half of bgm_play_group_channel for a caller that is not
+// followed by a room load (the title's OPTIONS menu) - stop and free the three
+// channels and leave the BGM state as sounds_reset does, nothing loaded.
+void bgm_stop_group(void)
+{
+    for (int i = 0; i < 3; i++) {
+        if (g_SndBank[i].handle != 0) {
+            setSndStop(g_SndBank[i].handle);
+            destroySndBank(g_SndBank[i].handle);
+        }
+        g_SndBank[i].handle   = 0;
+        g_SndBank[i].field_04 = 0;
+        g_SndBank[i].slot     = 0;
+        g_SndBank[i].paused   = 0;
+    }
+    g_BGM_STATE = 0xFF;
+}
+
 // ============================================================================
 // bgm_start_secondary_slots (0x0047f560)
 // Starts playing secondary sound slots if their bits are set in the target BGM state.

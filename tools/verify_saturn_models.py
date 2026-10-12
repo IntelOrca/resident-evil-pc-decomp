@@ -49,6 +49,10 @@ VCXPROJ = os.path.join(REPO, 'Game.vcxproj')
 CMAKELISTS = os.path.join(REPO, 'CMakeLists.txt')
 
 BLOCK_ENTRIES = 53
+# Rows the port appends after the two character blocks: the bonus outfits
+# (src/game/Bonus.h, EMD_ROW_BONUS_FIRST..). They are reached by row number
+# from LoadEntityEMD's bonus override, never through the block formula.
+BONUS_ROWS = 6
 
 # What the Saturn's table holds at the indices it claims, as
 # (model index, entity type, Chris file, Jill file).
@@ -86,11 +90,21 @@ def check(cond, msg):
 
 
 def port_emd_table(src):
-    """The port's g_emdPathTable as a list of 106 file names, or None."""
+    """The port's g_emdPathTable as a list of file names, or None.
+
+    The first 106 are the original's two 53-entry character blocks, which is
+    all this script indexes; the port appends six bonus-outfit rows after them
+    (src/game/Bonus.h).
+    """
     m = re.search(r'g_emdPathTable\[\d+\]\[\d+\]\s*=\s*\{(.*?)\n\};', src, re.S)
     if not m:
         return None
     return re.findall(r'"([^"]+)"', m.group(1))
+
+
+def release_rows(port_table):
+    """The original's rows only (the two 53-entry blocks)."""
+    return port_table[:BLOCK_ENTRIES * 2]
 
 
 def check_claimed_slots_are_fillers(port_table, index, label):
@@ -174,8 +188,10 @@ def check_outfits(saturn_src, saturn_hdr, port_table):
         for out, src in ((chris, disc[0]), (jill, disc[1])):
             check(re.search(r'\{\s*"%s"\s*,\s*"%s"' % (src, out), overlay) is not None,
                   'the migrator converts disc %s into %s' % (src, out))
-            # No release uses these names for anything else.
-            check(out.lower() not in port_table_names(port_table),
+            # No release uses these names for anything else. The port's own
+            # bonus rows do name the second outfit - they are copies of this
+            # very model in the base tree - so only the release rows count.
+            check(out.lower() not in port_table_names(release_rows(port_table)),
                   '%s is not a name the PC table already uses' % out)
 
 
@@ -213,8 +229,11 @@ def check_tick_swap(saturn_src, saturn_hdr):
 def check_wiring(loader_src):
     # Every Saturn call site in the loader must sit under a g_bSaturnMode test,
     # or OG and DC sessions would take the Saturn branch.
+    # (`!plainPlayer &&` is the bonus-outfit override: a chosen outfit skips
+    # every release's own remap, the Saturn's included.)
     for fn in ('saturn_emd_model_index', 'saturn_emd_path'):
-        m = re.search(r'if\s*\(g_bSaturnMode\)\s*\{[^}]*' + fn, loader_src)
+        m = re.search(r'if\s*\((?:!plainPlayer\s*&&\s*)?g_bSaturnMode\)\s*\{[^}]*' + fn,
+                      loader_src)
         check(m is not None,
               'EntityModelLoader calls %s() under g_bSaturnMode' % fn)
 
@@ -283,9 +302,9 @@ def main():
     if not check(port_table is not None,
                  'read the port\'s g_emdPathTable'):
         return 1
-    check(len(port_table) == BLOCK_ENTRIES * 2,
-          'the port\'s g_emdPathTable has %d entries (%d per block)'
-          % (len(port_table), BLOCK_ENTRIES))
+    check(len(port_table) == BLOCK_ENTRIES * 2 + BONUS_ROWS,
+          'the port\'s g_emdPathTable has %d entries (%d per block + %d bonus rows)'
+          % (len(port_table), BLOCK_ENTRIES, BONUS_ROWS))
 
     check_model_table(saturn_src, port_table)
     check_outfits(saturn_src, saturn_hdr, port_table)

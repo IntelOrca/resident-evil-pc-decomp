@@ -24,6 +24,7 @@
 #include "saturn/SaturnRoomObjects.h"
 #include "saturn/SaturnBattle.h"
 #include "saturn/SaturnTyrant.h"
+#include "GameOptions.h"
 
 // Forward declarations for functions only used within game_loop
 extern void FUN_00473f10(int* baseAddr, unsigned int bitIndex);
@@ -589,8 +590,10 @@ void check_menus_state(void)
         // Option Mode requested (START+bit8 combo detected in game_loop)
         g_main_state_flags &= ~MSF_OPTIONS_REQUEST;
         g_loadSaveStateFlag = 1;
-        // 0x00481621: PUSH 0x4761b0 (options_menu)
-        Task_execute(1, (void*)options_menu);
+        // 0x00481621: PUSH 0x4761b0 (options_menu). Port: the original options
+        // screen is replaced by the in-game page of the title OPTIONS menu
+        // (GameOptions.cpp: DISPLAY, INPUT, BACK TO TITLE).
+        Task_execute(1, (void*)ingame_options_menu);
     } else {
         // 0x00481628: PUSH 0x463710 (main_menu)
         Task_execute(1, (void*)main_menu);

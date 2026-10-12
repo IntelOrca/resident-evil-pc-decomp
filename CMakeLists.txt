@@ -42,6 +42,7 @@ set(RE1_SOURCES
 
     src/video/VideoPlayback.cpp
 
+    src/game/Bonus.cpp
     src/game/CharacterSelectionScreen.cpp
     src/game/CmdFunctions.cpp
     src/game/CollisionDebug.cpp
@@ -88,6 +89,7 @@ set(RE1_SOURCES
     src/game/SpriteRenderer.cpp
     src/game/TaskScheduler.cpp
     src/game/TextureLoader.cpp
+    src/game/GameOptions.cpp
     src/game/TitleScreen.cpp
     src/game/TmdAnimation.cpp
     src/game/TmdRenderer.cpp

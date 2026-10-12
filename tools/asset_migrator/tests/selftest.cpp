@@ -985,8 +985,9 @@ int main(int argc, char** argv) {
     if (cmd == "audioatomic") return cmdAudioAtomic();
     if (cmd == "selftest") return cmdSelfTest();
     if (cmd == "titlefont" && argc >= 3) {
-        // re1am_selftest titlefont OUT.BIN - what the Saturn tab writes as
-        // SATURN/Data/TITLEFNT.BIN, for trying the port's title menu without a disc.
+        // re1am_selftest titlefont OUT.BIN - what the PC tab writes as
+        // <tree>/Data/TITLEFNT.BIN, for trying the port's title menu without a
+        // migration.
         if (!testTitleFont() || !writeFile(argv[2], buildTitleFont())) return 1;
         std::printf("wrote %s\n", argv[2]);
         return 0;

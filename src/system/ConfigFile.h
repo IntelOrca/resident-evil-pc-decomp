@@ -30,3 +30,15 @@ BOOL ConfigFile_Load(void);
 
 // Write the current settings back, preserving everything else in the file.
 void ConfigFile_Save(void);
+
+// Write the settings the title-screen options menu edits as well: the [Game]
+// keys, [Input] PadDef (the gamepad layout) and the two that only take effect
+// on the next start - [Game] Mode and [Assets] Version - which are passed in
+// rather than read from the running game, because the game is still running
+// the mode and region it started with. Everything ConfigFile_Save() writes is
+// included.
+void ConfigFile_SaveGameSettings(int gameMode, int regionJpn);
+
+// "OG" / "DC" / "SATURN" - the [Game] Mode spelling, which is also the asset
+// overlay's folder name.
+const char* ConfigFile_GameModeName(int mode);

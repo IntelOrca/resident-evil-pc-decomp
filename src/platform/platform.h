@@ -128,6 +128,33 @@ void plat_window_destroy(HWND window);
 void plat_cursor_show(BOOL show);
 
 // ---------------------------------------------------------------------------
+// Display settings (the title screen's OPTIONS > DISPLAY page)
+//
+// The game changes g_bFullScreen / g_dwScreenWidth / g_dwScreenHeight /
+// g_bVSync and then asks for them to be applied. The request is only recorded:
+// the platform loop applies it between two frames, on its own stack, because
+// resizing a window re-enters the window procedure and the renderer's resize
+// path, and the game's code runs on small task stacks (docs/TASK_SCHEDULER.md).
+// ---------------------------------------------------------------------------
+void plat_display_request_apply(void);
+
+// Quit and start the game again (OPTIONS > GAME > APPLY, for the settings that
+// are only read at start-up). Only recorded here, like the display request: the
+// platform loop shuts down the way closing the window does - settings saved,
+// renderer released, single-instance lock dropped - and the new process is
+// started as the very last thing the old one does. The caller must have
+// written whatever the new process should read before asking.
+void plat_request_restart(void);
+
+// Quit to the desktop (OPTIONS > EXIT GAME). Closes the window exactly as its
+// close button does, so the normal exit path runs; nothing is relaunched.
+void plat_request_quit(void);
+
+// Size of the desktop the window is on, for filtering the resolution list.
+// FALSE (and 0x0) when it cannot be determined.
+BOOL plat_display_desktop_size(int* width, int* height);
+
+// ---------------------------------------------------------------------------
 // FMV playback backend (Phase 7)
 //
 // src/video/VideoPlayback.cpp owns the 4-state machine, the per-FMV skip masks,

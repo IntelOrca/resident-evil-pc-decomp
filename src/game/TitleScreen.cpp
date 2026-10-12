@@ -11,6 +11,7 @@
 #include <cstring>          // memcpy, for the DC title sheet assembly
 #include "saturn/SaturnBattle.h"
 #include "saturn/SaturnTitle.h"
+#include "GameOptions.h"
 #include "../system/AssetPath.h"
 
 extern void logos_state(void);
@@ -200,11 +201,26 @@ static unsigned int dc_title_build_page(const unsigned char* file,
 // title_menu_last_item(), which is what both the wrap and the default consult.
 static int s_battlePageReady = 0;
 
-// Saturn mode, with data\titlefnt.bin present: the second title state is drawn in
-// the original typeface as NEW GAME / LOAD GAME / EXTRA, and EXTRA opens a
-// submenu (g_titleOptionsFading 11). Set in init_title_screen(); when it is 0
-// the previous behaviour above applies unchanged. See saturn/SaturnTitle.h.
+// With data\titlefnt.bin present (every mode): the second title state is drawn
+// in the original typeface, one sprite per line, as
+//
+//     NEW GAME / LOAD GAME / EXTRA / OPTIONS
+//
+// EXTRA is listed only while the Battle Game is offered and opens a submenu
+// (g_titleOptionsFading 11); OPTIONS leaves the title for game_options_state
+// (g_titleOptionsFading 12). Set in init_title_screen(); when it is 0 the
+// previous behaviour above applies unchanged and there is no OPTIONS item. See
+// saturn/SaturnTitle.h.
 static int s_saturnFontMenu = 0;
+
+// Set by game_options_state before it chains back: the title then opens
+// straight on the menu, cursor on OPTIONS, instead of on PRESS START BUTTON.
+static int s_titleResumeMenu = 0;
+
+void title_resume_on_menu(void)
+{
+    s_titleResumeMenu = 1;
+}
 
 // The Director's Cut's rows 3-6 are its difficulty submenu and its page 9 /
 // slot 13 sheet is full (four 64-row cells), so its Battle row is selection 7 on
@@ -219,16 +235,31 @@ static int title_battle_item(void)
     return g_bDcMode ? DC_TITLE_BATTLE_ITEM : SATURN_TITLE_BATTLE_ITEM;
 }
 
-// The Saturn font menu in the Director's Cut. Its main frames and the EXTRA
-// submenu are sheets of their own (the DC title sheet has no room for 3 frames),
-// texture ids 10 / 11 in slots 14 / 15, and its selection ids sit above the
-// difficulty submenu's 3-6: EXTRA = 8, the submenu's entries from 9.
-#define DC_TITLE_MAIN_PAGE     10
-#define DC_TITLE_MAIN_SLOT     14
-#define DC_TITLE_EXTRAS_PAGE   11
-#define DC_TITLE_EXTRAS_SLOT   15
+// The font menu's sheet (saturn_title_build_strips): texture id 10 in slot 14,
+// in every mode. Its selection ids in the Director's Cut sit above the
+// difficulty submenu's 3-6: EXTRA = 8, the submenu's entries from 9. OPTIONS is
+// 12 everywhere, clear of both numberings.
+#define TITLE_MENU_PAGE        10
+#define TITLE_MENU_SLOT        14
 #define DC_TITLE_EXTRA_ITEM    8
 #define DC_TITLE_EXTRAS_FIRST  9
+#define TITLE_OPTIONS_ITEM     12
+
+// The EXTRA submenu: the extra game modes, then BACK. A new mode is one more
+// entry ahead of BACK here, a strip in kTitleStrips and a case in title_state().
+#define TITLE_EXTRAS_COUNT     2
+
+// Strip order on the menu sheet.
+#define TITLE_STRIP_NEW_GAME   0
+#define TITLE_STRIP_LOAD_GAME  1
+#define TITLE_STRIP_EXTRA      2
+#define TITLE_STRIP_OPTIONS    3
+#define TITLE_STRIP_BATTLE     4
+#define TITLE_STRIP_BACK       5
+static const char* const kTitleStrips[] = {
+    "NEW GAME", "LOAD GAME", "EXTRA", "OPTIONS", "BATTLE GAME", "BACK",
+};
+#define TITLE_STRIP_COUNT  ((int)(sizeof(kTitleStrips) / sizeof(kTitleStrips[0])))
 
 static int title_extra_item(void)
 {
@@ -238,6 +269,30 @@ static int title_extra_item(void)
 static int title_extras_first(void)
 {
     return g_bDcMode ? DC_TITLE_EXTRAS_FIRST : SATURN_TITLE_EXTRAS_FIRST;
+}
+
+// The main menu's selectable rows, top to bottom, as g_titleSelectionId values.
+static int title_main_items(unsigned char* out)
+{
+    int n = 0;
+    out[n++] = 1;                                   // NEW GAME
+    out[n++] = 2;                                   // LOAD GAME
+    if (saturn_battle_offered()) out[n++] = (unsigned char)title_extra_item();
+    out[n++] = TITLE_OPTIONS_ITEM;
+    return n;
+}
+
+// Which strip a selection id draws, -1 for an id the font menu does not own
+// (PRESS START, the Director's Cut's difficulty cells).
+static int title_strip_of(int selectionId)
+{
+    if (selectionId == 1) return TITLE_STRIP_NEW_GAME;
+    if (selectionId == 2) return TITLE_STRIP_LOAD_GAME;
+    if (selectionId == TITLE_OPTIONS_ITEM) return TITLE_STRIP_OPTIONS;
+    if (selectionId == title_extra_item()) return TITLE_STRIP_EXTRA;
+    if (selectionId == title_extras_first()) return TITLE_STRIP_BATTLE;
+    if (selectionId == title_extras_first() + 1) return TITLE_STRIP_BACK;
+    return -1;
 }
 
 static int build_battle_game_page(void)
@@ -291,17 +346,6 @@ void init_title_screen(void)
             ? GAME_DATA_ROOT "data\\t_press.tim"
             : GAME_DATA_ROOT "data\\t_start.tim";
         LoadFile(buttonTexPath, g_TimImageBuffer__bitmap, 0x20);
-
-        s_saturnFontMenu = 0;
-        // The Saturn's NEW GAME / LOAD GAME / EXTRA menu: Saturn mode, and OG
-        // whenever the Battle Game is offered (EXTRA > BATTLE GAME). Without
-        // the font file both fall back to the USA rows plus a BATTLE GAME row.
-        if ((g_bSaturnMode || (g_GameMode == GAME_MODE_OG && saturn_battle_offered())) &&
-            saturn_title_font_load()) {
-            saturn_title_draw_main_frames(g_TimImageBuffer__bitmap,
-                                          saturn_battle_offered());
-            s_saturnFontMenu = 1;
-        }
     }
 
     g_titleTexturePageData[4] = 26;
@@ -327,40 +371,18 @@ void init_title_screen(void)
         g_titleTexturePageData[4] = 9;
         g_titleTexturePageData[5] = 9;
         g_titleTexturePageData[6] = 9;
-        if (saturn_battle_offered()) {
-            if (saturn_title_font_load() &&
-                saturn_title_build_main_page(g_TimImageBuffer__bitmap) != 0) {
-                LoadTexturePage(g_TimImageBuffer__bitmap, DC_TITLE_MAIN_PAGE, 0,
-                                DC_TITLE_MAIN_SLOT, 0, 0, 0, 0);
-                if (saturn_title_build_extras_page(g_TimImageBuffer__bitmap) != 0) {
-                    LoadTexturePage(g_TimImageBuffer__bitmap, DC_TITLE_EXTRAS_PAGE, 0,
-                                    DC_TITLE_EXTRAS_SLOT, 0, 0, 0, 0);
-                    // NEW GAME / LOAD GAME / EXTRA come from the main sheet; the
-                    // PRESS ANY BUTTON cell (0) and the difficulty cells (3-6)
-                    // stay the DC's own.
-                    g_titleTexturePageData[1] = DC_TITLE_MAIN_PAGE;
-                    g_titleTexturePageData[2] = DC_TITLE_MAIN_PAGE;
-                    g_titleTexturePageData[DC_TITLE_EXTRA_ITEM] = DC_TITLE_MAIN_PAGE;
-                    for (int i = 0; i < saturn_title_extras_count(); i++) {
-                        g_titleTexturePageData[DC_TITLE_EXTRAS_FIRST + i] = DC_TITLE_EXTRAS_PAGE;
-                    }
-                    s_saturnFontMenu = 1;
-                }
-            }
-            if (!s_saturnFontMenu) build_battle_game_page();
-        }
-    } else if (s_saturnFontMenu) {
-        // Selection 3 (EXTRA) is a frame of the main sheet; the submenu's entries
-        // are the frames of a second sheet in slot 13, as the DC's are.
-        if (saturn_title_build_extras_page(g_TimImageBuffer__bitmap) != 0) {
-            LoadTexturePage(g_TimImageBuffer__bitmap, 9, 0, 13, 0, 0, 0, 0);
-        } else {
-            s_saturnFontMenu = 0;
-        }
-        g_titleTexturePageData[SATURN_TITLE_EXTRA_ITEM] = 8;
-        for (int i = 0; i < saturn_title_extras_count(); i++) {
-            g_titleTexturePageData[SATURN_TITLE_EXTRAS_FIRST + i] = 9;
-        }
+    }
+
+    // The menu in the option typeface, every mode. The sheet is a page of its
+    // own, so the release's sheet above keeps PRESS START BUTTON (and, in the
+    // Director's Cut, the difficulty cells) exactly as shipped. Without the
+    // font the old rows stay, with the BATTLE GAME row when it is offered.
+    if (saturn_title_font_load() &&
+        saturn_title_build_strips(g_TimImageBuffer__bitmap, kTitleStrips,
+                                  TITLE_STRIP_COUNT) != 0) {
+        LoadTexturePage(g_TimImageBuffer__bitmap, TITLE_MENU_PAGE, 0,
+                        TITLE_MENU_SLOT, 0, 0, 0, 0);
+        s_saturnFontMenu = 1;
     } else if (saturn_battle_offered()) {
         build_battle_game_page();
     }
@@ -380,6 +402,7 @@ void init_title_screen(void)
     // The Saturn's default cursor is its extra item when there is no save
     // (TITLE.PRG TitleStateMachine 0x0602D508, `0x30` against the USA build's
     // `0x20`): with nothing to continue, BATTLE GAME is the first thing offered.
+    // SATURN_TITLE_BATTLE_ITEM and SATURN_TITLE_EXTRA_ITEM are the same row 3.
     g_titleSelectionId = (unsigned char)((g_bSaturnMode && saturn_battle_offered())
                                          ? SATURN_TITLE_BATTLE_ITEM : 1);
     g_main_state_flags &= ~MSF_SCREEN_MODE_MASK;
@@ -450,22 +473,6 @@ static const TitleTextPosData g_titleTextPosTableUsa[4] = {
     { 0,  64,  8, 13 },  // index 3: "BATTLE GAME" (Saturn mode only)
 };
 
-// Saturn font menu (saturn/SaturnTitle.cpp). Every frame is 64 rows of one of
-// two sheets: the main one (slot 12) keeps PRESS START BUTTON's original rows and
-// carries the three menu frames below them, the second (slot 13) one frame per
-// EXTRA entry. The frames' first text line sits one row down, so the same
-// screenY the USA rows use (8) puts the lines where the original art has them.
-static const TitleTextPosData g_titleTextPosTableSat[8] = {
-    {   0, 54, 24, 12 },  // 0: PRESS START BUTTON (the USA art, untouched)
-    {  64, 64,  8, 12 },  // 1: NEW GAME bright
-    { 128, 64,  8, 12 },  // 2: LOAD GAME bright
-    { 192, 64,  8, 12 },  // 3: EXTRA bright
-    {   0, 64,  8, 13 },  // 4: EXTRA submenu entry 0 (BATTLE GAME) bright
-    {  64, 64,  8, 13 },  // 5: entry 1
-    { 128, 64,  8, 13 },  // 6: entry 2
-    { 192, 64,  8, 13 },  // 7: entry 3
-};
-
 // The last selectable row, i.e. what the cursor wraps to. The Saturn's title
 // wraps at 0x40 with the Battle item present and 0x30 without (TITLE.PRG
 // TitleStateMachine 0x0602D508 / TitleMenuCursorDraw 0x0602BDCC).
@@ -476,7 +483,6 @@ static const TitleTextPosData g_titleTextPosTableSat[8] = {
 static int title_menu_last_item(void)
 {
     if (!saturn_battle_offered()) return 2;
-    if (s_saturnFontMenu) return title_extra_item();
     return s_battlePageReady ? title_battle_item() : 2;
 }
 
@@ -498,22 +504,84 @@ static const TitleTextPosData g_titleTextPosTableDc[8] = {
     {   0, 64, 8, DC_TITLE_BATTLE_SLOT },  // 7: BATTLE GAME alone (no title font)
 };
 
-// The Saturn font menu's rows in the Director's Cut: selections 1, 2 and 8-10 are
-// the Saturn frames (64 rows, screenY 8 like the USA/Saturn tables), the rest are
-// the DC's own. The sheets are the DC_TITLE_MAIN_* / DC_TITLE_EXTRAS_* pages.
-static const TitleTextPosData g_titleTextPosTableDcSat[11] = {
-    {   0, 80, 0, 12 },  // 0: PRESS ANY BUTTON (the DC's own)
-    {   0, 64, 8, DC_TITLE_MAIN_SLOT },    // 1: NEW GAME bright
-    {  64, 64, 8, DC_TITLE_MAIN_SLOT },    // 2: LOAD GAME bright
-    {   0, 64, 0, 13 },  // 3-6: the DC's difficulty cells, as in the table above
-    {  64, 64, 0, 13 },
-    { 128, 64, 0, 13 },
-    { 192, 64, 0, 13 },
-    {   0, 64, 8, DC_TITLE_BATTLE_SLOT },  // 7: unused with the font menu
-    { 128, 64, 8, DC_TITLE_MAIN_SLOT },    // 8: EXTRA bright
-    {   0, 64, 8, DC_TITLE_EXTRAS_SLOT },  // 9: BATTLE GAME bright
-    {  64, 64, 8, DC_TITLE_EXTRAS_SLOT },  // 10: BACK bright
-};
+// ============================================================================
+// The font menu (port-added): one sprite per line, the selected line from its
+// bright strip, the others from their dim ones.
+//
+// The lines stand where the original art has them. The USA cell is drawn at
+// screenY 8 + 38 with NEW GAME one row down and LOAD GAME 18 rows under it, and
+// that is what a menu of up to three lines keeps. A fourth line does not fit at
+// that pitch above the copyright strip, so four lines close up to 14 rows and
+// start 4 rows higher.
+//
+// The copyright line is part of each option cell in the USA art (rows 131..139
+// of the sheet, straight under LOAD GAME); here it is drawn from that sheet as a
+// sprite of its own, below the last line. The Director's Cut's cells are whole
+// 256x80 pictures of their own and have no such strip to borrow.
+// ============================================================================
+#define TITLE_MENU_SCREEN_Y     (38 + 8 + 1)
+#define TITLE_MENU_PITCH        18
+#define TITLE_MENU_PITCH_TIGHT  14
+#define TITLE_COPYRIGHT_SRC_Y   131
+#define TITLE_COPYRIGHT_ROWS    9
+#define TITLE_COPYRIGHT_Y       (38 + 8 + 55)
+
+static void title_draw_strip(unsigned char brightness, int texturePage, int slot,
+                             int texV, int height, int screenY)
+{
+    TextureDesc* td = &g_TextureDesc;
+
+    td->flags = 0x10000000;
+    if (brightness != 0x80) {
+        td->flags = 0x40000000;
+    }
+    td->texU = 0;
+    td->screenX = -130;
+    td->texturePage = texturePage;
+    td->width = 256;
+    td->texV = (unsigned char)texV;
+    td->height = height;
+    td->screenY = screenY;
+    td->colorMulR = brightness;
+    td->clutX = 0;
+    td->colorMulG = brightness;
+    td->pivotX = 0;
+    td->pivotY = 0;
+    td->colorMulB = brightness;
+    td->clutY = 0x1E0;
+
+    display_texture(td, 2, slot, 1);
+}
+
+static void title_draw_font_menu(unsigned char brightness, unsigned char selectionId)
+{
+    unsigned char rows[4];
+    int count;
+
+    const int first = title_extras_first();
+    if (selectionId >= first && selectionId < first + TITLE_EXTRAS_COUNT) {
+        count = TITLE_EXTRAS_COUNT;
+        for (int i = 0; i < count; i++) rows[i] = (unsigned char)(first + i);
+    } else {
+        count = title_main_items(rows);
+    }
+
+    const int pitch = (count > 3) ? TITLE_MENU_PITCH_TIGHT : TITLE_MENU_PITCH;
+    const int top = TITLE_MENU_SCREEN_Y - ((count > 3) ? 4 : 0);
+    for (int i = 0; i < count; i++) {
+        const int strip = title_strip_of(rows[i]);
+        if (strip < 0) continue;
+        const int texV = strip * SATURN_TITLE_STRIP_PITCH +
+                         (rows[i] == selectionId ? SATURN_TITLE_STRIP_H : 0);
+        title_draw_strip(brightness, TITLE_MENU_PAGE, TITLE_MENU_SLOT, texV,
+                         SATURN_TITLE_STRIP_H, top + i * pitch);
+    }
+
+    if (!g_bDcMode) {
+        title_draw_strip(brightness, g_titleTexturePageData[1], 12,
+                         TITLE_COPYRIGHT_SRC_Y, TITLE_COPYRIGHT_ROWS, TITLE_COPYRIGHT_Y);
+    }
+}
 
 // ============================================================================
 // UpdateTitleTextSprite (0x00430d40)
@@ -527,26 +595,22 @@ void UpdateTitleTextSprite(unsigned char brightness, unsigned char selectionId)
         td->flags = 0x40000000;
     }
 
+    // The font menu owns every row but PRESS START and the Director's Cut's
+    // difficulty cells, which stay the release's own art below.
+    if (s_saturnFontMenu && title_strip_of(selectionId) >= 0) {
+        title_draw_font_menu(brightness, selectionId);
+        return;
+    }
+
     const TitleTextPosData* entry;
     if (g_bDcMode) {
-        if (s_saturnFontMenu) {
-            if (selectionId > DC_TITLE_EXTRAS_FIRST + saturn_title_extras_count() - 1 ||
-                selectionId == DC_TITLE_BATTLE_ITEM) selectionId = 0;
-            entry = &g_titleTextPosTableDcSat[selectionId];
-        } else {
-            if (selectionId > DC_TITLE_BATTLE_ITEM ||
-                (selectionId == DC_TITLE_BATTLE_ITEM && !s_battlePageReady)) selectionId = 0;
-            entry = &g_titleTextPosTableDc[selectionId];
-        }
+        if (selectionId > DC_TITLE_BATTLE_ITEM ||
+            (selectionId == DC_TITLE_BATTLE_ITEM && !s_battlePageReady)) selectionId = 0;
+        entry = &g_titleTextPosTableDc[selectionId];
     } else if (s_saturnFontMenu) {
-        // 4.. are the submenu's frames, which the cursor-row clamp must not fold
-        // back to 0.
-        if (selectionId >= SATURN_TITLE_EXTRAS_FIRST) {
-            if (selectionId - SATURN_TITLE_EXTRAS_FIRST >= saturn_title_extras_count()) selectionId = 0;
-        } else if (selectionId > SATURN_TITLE_EXTRA_ITEM) {
-            selectionId = 0;
-        }
-        entry = &g_titleTextPosTableSat[selectionId];
+        // Only PRESS START BUTTON is left to the sheet here.
+        selectionId = 0;
+        entry = &g_titleTextPosTableUsa[0];
     } else {
         const int last = (unsigned char)title_menu_last_item();
         if (selectionId > (unsigned char)last) selectionId = 0;
@@ -657,7 +721,7 @@ void update_title_options(void)
             // Saturn EXTRA submenu: the extra game modes, then BACK. Up/down
             // move; confirm starts the highlighted mode, or returns to the main
             // menu on BACK (leaving the cursor on EXTRA).
-            const int entries = saturn_title_extras_count();
+            const int entries = TITLE_EXTRAS_COUNT;
             const int backSel = title_extras_first() + entries - 1;
             if (g_PlayerPadPressed & 0x5100) {
                 if (!(g_PlayerPadPressed & 0x1100)) {
@@ -699,6 +763,17 @@ void update_title_options(void)
             }
             return;
         }
+
+        case 12:
+            // OPTIONS was confirmed: a short fade to black, then out of the
+            // title with the selection still on OPTIONS, which is what
+            // title_state() dispatches on.
+            if (g_fading_state < 0) {
+                title_exit_loop();
+                return;
+            }
+            UpdateTitleTextSprite(128, g_titleSelectionId);
+            return;
 
         case 0:
             g_titleOptionsFading = 1;
@@ -742,6 +817,18 @@ void update_title_options(void)
 			return;
 		}
 
+		// OPTIONS leaves the title for its own state. No logo voice: that
+		// belongs to starting a game.
+		if (s_saturnFontMenu && ((g_PlayerPadPressed & 0xeff) || sidewinderPress) &&
+		    g_titleSelectionId == TITLE_OPTIONS_ITEM) {
+			play_sfx(SFX_BANKS, SFX_TITLE_TYPE01);
+			g_titleOptionsFading = 12;
+			g_fade_type_id = 2;
+			g_fading_counter = 0x800;
+			fade_update();
+			return;
+		}
+
 		if ((g_PlayerPadPressed & 0xeff) || sidewinderPress) {
 			play_sfx(SFX_BANKS, SFX_TITLE_EVIL01);
 			play_sfx(SFX_BANKS, 1); // null sfx
@@ -753,7 +840,20 @@ void update_title_options(void)
 			return;
 		}
 
-		if (g_PlayerPadPressed & 0x5100) {
+		if (s_saturnFontMenu && (g_PlayerPadPressed & 0x5100)) {
+			// The font menu's rows are a list, not a run of ids (EXTRA comes
+			// and goes, OPTIONS is 12): step through it and wrap at both ends.
+			unsigned char rows[4];
+			const int count = title_main_items(rows);
+			int at = 0;
+			for (int i = 0; i < count; i++) {
+				if (rows[i] == g_titleSelectionId) at = i;
+			}
+			if (!(g_PlayerPadPressed & 0x1100)) at = (at + 1) % count;
+			else                                at = (at + count - 1) % count;
+			g_titleSelectionId = rows[at];
+			g_titleDemoTime = 0x708;
+		} else if (g_PlayerPadPressed & 0x5100) {
 			// The wrap target is the last SELECTABLE row, so it is 2 everywhere
 			// but Saturn mode with the Battle item unlocked - the same 0x30/0x40
 			// distinction the Saturn's own menu draws.
@@ -966,6 +1066,17 @@ void title_state(void)
 
     init_title_screen();
 
+    // Back from the options state: open straight on the menu (mode 1, state
+    // 2), cursor on OPTIONS, the way PRESS START BUTTON hands over to it. Only
+    // with the font menu - without it there is no OPTIONS row to land on.
+    if (s_titleResumeMenu && s_saturnFontMenu) {
+        g_titleMode = 1;
+        g_titleOptionsFading = 2;
+        g_titleDemoTime = 0x708;
+        g_titleSelectionId = TITLE_OPTIONS_ITEM;
+    }
+    s_titleResumeMenu = 0;
+
     // empty_00497c10(0);
     // empty_0040abb0((void*)0, 0, 0, 0);
 
@@ -1000,9 +1111,16 @@ void title_state(void)
     }
 
     cleanup_texture_slot(12);
-    if (g_bDcMode) {
-        cleanup_texture_slot(DC_TITLE_BATTLE_SLOT);
-        cleanup_texture_slot(DC_TITLE_EXTRAS_SLOT);
+    // Slot 14 is the font menu's sheet in every mode, and the Director's Cut's
+    // BATTLE GAME row when there is no font (TITLE_MENU_SLOT == DC_TITLE_BATTLE_SLOT).
+    if (g_bDcMode || s_saturnFontMenu) {
+        cleanup_texture_slot(TITLE_MENU_SLOT);
+    }
+
+    // OPTIONS: a state of its own, which chains back here when it is left.
+    if (g_titleSelectionId == TITLE_OPTIONS_ITEM) {
+        Task_chain((void*)game_options_state);
+        return;
     }
 
     // DC: the difficulty submenu leaves the choice at 3..5 (and 6 for ADVANCED*

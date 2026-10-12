@@ -5,6 +5,7 @@
 #include "core/DiscImage.h"
 #include "core/Jimaku.h"
 #include "core/Ps1Audio.h"
+#include "core/TitleFont.h"
 #include "core/Util.h"
 #include "core/Video.h"
 
@@ -195,7 +196,57 @@ bool migratePs1Supplement(const PcMigrationOptions& opts,
     return true;
 }
 
+// The title menu's typeface (core/TitleFont.h) into <tree>/Data. The game
+// draws NEW GAME / LOAD GAME / EXTRA / OPTIONS with it in every mode, so it
+// belongs to the base tree, not to an overlay.
+bool writeTitleFont(const std::string& tree, const Progress& progress,
+                    std::string* error) {
+    const std::string dataDir = childDir(tree, "Data");
+    const std::string path = joinPath(dataDir, "TITLEFNT.BIN");
+    const std::vector<uint8_t> font = buildTitleFont();
+    if (!makeDirs(dataDir) || !writeFile(path, font)) {
+        if (error) *error = "cannot write " + path;
+        return false;
+    }
+    progress.info("title menu font -> " + path + " (" +
+                  std::to_string(font.size()) + " bytes)");
+    return true;
+}
+
 }  // namespace
+
+int copyBonusOutfits(const std::string& targetRoot, const std::string& sourceEnemyDir,
+                     const std::vector<BonusOutfitFile>& files,
+                     const Progress& progress) {
+    int written = 0;
+    for (const char* region : {"USA", "JPN"}) {
+        const std::string tree = joinPath(targetRoot, region);
+        if (!isDirectory(tree)) continue;
+        const std::string enemyDir = childDir(tree, "Enemy");
+        for (const BonusOutfitFile& f : files) {
+            // The source name is matched without regard to case; the
+            // destination is written as given.
+            std::string src;
+            for (const auto& e : listDirectory(sourceEnemyDir)) {
+                if (toLower(e) == toLower(f.source)) src = joinPath(sourceEnemyDir, e);
+            }
+            std::vector<uint8_t> data;
+            if (src.empty() || !readFile(src, &data)) {
+                progress.info("  bonus outfit " + f.source + " not found in " +
+                              sourceEnemyDir + " - skipped");
+                continue;
+            }
+            const std::string dst = joinPath(enemyDir, f.dest);
+            if (!makeDirs(enemyDir) || !writeFile(dst, data)) {
+                progress.info("  cannot write " + dst);
+                continue;
+            }
+            progress.info("  " + f.source + " -> " + dst + "  (" + f.what + ")");
+            ++written;
+        }
+    }
+    return written;
+}
 
 bool migratePcAssets(const PcMigrationOptions& opts, const Progress& progress,
                      std::string* error) {
@@ -246,6 +297,10 @@ bool migratePcAssets(const PcMigrationOptions& opts, const Progress& progress,
                              opts.keepAvi, progress, error))
             return false;
     }
+
+    // Carried by the tool, not read from any disc; written on every run so a
+    // tree migrated before the font moved here gets it too.
+    if (!writeTitleFont(destRoot, progress, error)) return false;
 
     // After the AVI conversion, so the "tree already has it" check sees the
     // PC movies' .mp4 as well.
@@ -315,6 +370,17 @@ bool migrateDcAssets(const DcMigrationOptions& opts, const Progress& progress,
         cleanup();
         return false;
     }
+
+    // The arrange game's outfits as bonus outfits: the game offers them in
+    // every mode once ADVANCED is cleared (src/game/Bonus.h), so it needs them
+    // in the base tree. The DC calls them EM1032 / EM1033 - the PC's own
+    // alternate outfits' names - hence the copies take names no release uses.
+    progress.info("bonus outfits: the arrange game's player models -> the base tree");
+    copyBonusOutfits(opts.targetRoot, childDir(overlay, "Enemy"),
+                     {{"EM1032.EMD", "EM1052.EMD", "Chris, Director's Cut outfit"},
+                      {"EM1033.EMD", "EM1053.EMD", "Jill, Director's Cut outfit"},
+                      {"EM1035.EMD", "EM1055.EMD", "Rebecca, Director's Cut outfit"}},
+                     progress);
 
     int planes = 0;
     if (opts.fmvSubtitles) {

@@ -5,6 +5,7 @@
 #include "core/Types.h"
 
 #include <string>
+#include <vector>
 
 namespace re1 {
 
@@ -95,10 +96,11 @@ struct SaturnMigrationOptions {
     //   - the Laboratory Tyrant room (STAGE5/ROOM513): its room file, its eight
     //     re-drawn backgrounds (RC5130..RC5137.pak) and OB80, the cover over the
     //     second capsule Chris' second Tyrant comes out of;
-    //   - the title menu typeface (SATURN/Data/TITLEFNT.BIN, core/TitleFont.h;
-    //     carried by the tool, not read from the disc), the Battle Game's results
-    //     screens, and its exclusive sound: the arena / end-of-run / Tyrant /
-    //     ranking music and the Tick's sound effects (core/SaturnMusic.cpp).
+    //   - the Battle Game's results screens, and its exclusive sound: the
+    //     arena / end-of-run / Tyrant / ranking music and the Tick's sound
+    //     effects (core/SaturnMusic.cpp).
+    // The title menu typeface used to be written here as well; it is the PC
+    // tab's now (<tree>/Data/TITLEFNT.BIN), because every mode draws with it.
     //
     // Optional: every other room of the campaign. The Saturn's 348 shared RDTs
     // decode byte-identical to the PS1's (most also to the PC's), so this is a
@@ -125,8 +127,6 @@ struct SaturnMigrationOptions {
     //   text (JIMAKU*.RGB, STAFF*.STF): the Japanese prologue has its subtitles
     //   in the picture and the staff rolls their credits.
     bool movies = false;
-    // Write the PC/PS1 option typeface as SATURN/Data/TITLEFNT.BIN.
-    bool titleFont = true;
     // Audio format and quality, for every rendered sound.
     AudioFormat musicFormat = AudioFormat::Wav;
     int oggQuality = 6;             // libvorbis -q:a when musicFormat is Ogg
@@ -145,6 +145,23 @@ bool migratePcAssets(const PcMigrationOptions& opts, const Progress& progress,
 
 bool migrateDcAssets(const DcMigrationOptions& opts, const Progress& progress,
                      std::string* error);
+
+// One player model the game offers as a bonus outfit in every mode
+// (src/game/Bonus.h): `source` is its file name in the folder it was just
+// written to, `dest` the name it takes in the base tree's Enemy folder - one
+// no release uses, so it cannot shadow the PC's own EM1030..EM1033.
+struct BonusOutfitFile {
+    std::string source;
+    std::string dest;
+    std::string what;
+};
+
+// Copies those files into <target>/USA/Enemy and <target>/JPN/Enemy, for
+// whichever of the two trees exists. A missing source is reported and skipped.
+// Returns the number of files written.
+int copyBonusOutfits(const std::string& targetRoot, const std::string& sourceEnemyDir,
+                     const std::vector<BonusOutfitFile>& files,
+                     const Progress& progress);
 
 // Builds <target>/SATURN from a Saturn disc (core/SaturnOverlay.cpp).
 bool migrateSaturnAssets(const SaturnMigrationOptions& opts,

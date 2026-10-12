@@ -206,7 +206,9 @@
     <ClCompile Include="src\marni\MarniInput.cpp" />
     <ClCompile Include="src\marni\MarniXInput.cpp" />
     <ClCompile Include="src\game\SoundSystem.cpp" />
+    <ClCompile Include="src\game\GameOptions.cpp" />
     <ClCompile Include="src\game\TitleScreen.cpp" />
+    <ClCompile Include="src\game\Bonus.cpp" />
     <ClCompile Include="src\game\CharacterSelectionScreen.cpp" />
     <ClCompile Include="src\game\SaveLoadScreen.cpp" />
     <ClCompile Include="src\game\GteMatrix.cpp" />

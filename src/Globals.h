@@ -2136,6 +2136,7 @@ void LoadRoomRdt(void);
 int  Room_RdtLoadFailed(void);
 void update_room_bgm(void);
 void bgm_play_group_channel(unsigned char group, int ch);  // port-added, SoundSystem.cpp
+void bgm_stop_group(void);                                 // port-added, SoundSystem.cpp
 void LoadHeldItemsImages(void);
 void load_room_bg(void);
 void load_room_bg_image(void);

@@ -215,8 +215,66 @@ The game reads `config.ini` from the executable's directory first (falling back
 to the working directory) and creates one with commented defaults if none is
 present. Release packages ship `config.ini.template` from the repository root as
 that initial `config.ini`. The `[Display]`, `[Player]` and `[Input]` keys are
-saved on exit; `[Assets]`, `[Save]`, `[Game]` and `[Debug]` are yours to edit and
-are never rewritten.
+saved on exit. `[Assets] Version`, the `[Game]` keys and `[Input] PadDef` (the
+gamepad layout) are written when you leave the title screen's OPTIONS menu
+(below). Everything else - `[Assets] Path`, `[Save]`, `[Debug]`, your comments -
+is yours to edit and is never rewritten.
+
+### Options menu (title screen)
+
+The title menu is **NEW GAME / LOAD GAME / EXTRA / OPTIONS** in every mode
+(EXTRA appears only while the Battle Game is offered). OPTIONS opens a menu of
+its own with four pages, so none of the settings below need a text editor:
+
+| Page | What it holds |
+|---|---|
+| **DISPLAY** | Window mode (windowed / borderless fullscreen), resolution, vsync. The picture always stays 4:3: a widescreen monitor or window size gets black bars instead of a stretched image. Resolution is the window's size; fullscreen uses the desktop's. |
+| **INPUT** | Every control, for the keyboard and for the gamepad: select a cell and press the new key or button. Each device has a reset row. The arrow keys, Enter and Esc always work in this menu, whatever is bound. |
+| **GAME** | Game mode, region, PS1 ending credits, PS1 FMV subtitles, skip any FMV, Battle Game, western difficulty - the `[Game]` keys and `[Assets] Version` described in the sections below. An entry whose assets are not installed cannot be selected. |
+| **BONUS** | The outfit each playable character wears, with the model shown beside the list, and an on/off switch for each bonus weapon you have unlocked. Moving onto a weapon row shows its owner aiming it: Chris with the rocket launcher and the Minimi, Jill with the Colt Python and the Ingram. |
+
+Game mode and region are read once at start-up, so changing either needs a
+restart: **APPLY AND RESTART** on the GAME page does it for you, and leaving the
+menu without it keeps the change for the next start.
+
+**Bonuses** are kept in `bonus.dat` in the save folder, across every save and
+every mode:
+
+| Bonus | How it is unlocked |
+|---|---|
+| Alternate outfit (Chris, Jill) | getting the special key, in any mode |
+| PC outfit (Chris, Jill) | getting the special key in the original mode |
+| Director's Cut outfit (Chris, Jill, Rebecca) | clearing the Director's Cut's ADVANCED (arrange) game |
+| Saturn outfit (Chris, Jill) | getting the special key in Saturn mode |
+| Rocket launcher | earning it at the ending, in any mode |
+| Colt Python | the ADVANCED best ending of the Director's Cut |
+| Ingram (Jill) / Minimi (Chris) | earning it at the ending in the original mode |
+
+An outfit other than DEFAULT is worn in every mode, in the campaign and in the
+Battle Game, and takes priority over the wardrobe. A bonus weapon that is
+switched on is put in the item box when a **new game** of the campaign starts;
+the Battle Game never uses the bonus weapons (nor the Colt Python's infinite
+ammo). The Director's
+Cut and Saturn outfits need those releases migrated (see *Asset migration*).
+
+The menu needs the title font, `Data/TITLEFNT.BIN`, which the asset migrator's
+PC tab writes; without it the title keeps the art the release shipped with and
+has no OPTIONS item.
+
+Its sounds are `Sound/cursor`, `Sound/decide` and `Sound/cancel` (`.wav`, or the
+`.ogg` beside it): cursor for moving and changing a value, decide for
+confirming, cancel for going back. A missing file falls back to the title's own
+sound.
+
+### Options menu (in game)
+
+The button that opened the original options screen (`Start`+`Select` by
+default, the OPTIONS binding) now opens the same menu in game, cut down to
+**DISPLAY**, **INPUT**, **BACK TO TITLE** (asks for confirmation; unsaved
+progress is lost) and **BACK** (Esc / cancel does the same) to return to the
+game. The pages are the title menu's, so a rebinding made here applies at once.
+The room's music keeps playing underneath. The original options screen
+(`src/game/OptionsMenu.cpp`) is still in the tree but is no longer opened.
 
 ### Asset version (USA / JPN)
 
@@ -255,18 +313,24 @@ append a symbolized stack trace to `crash.log`.
 
 No game data is distributed with this repository. The player-facing importer is a
 portable Qt GUI in `tools/asset_migrator/` (released as
-`asset-migrator-<version>-windows-x64.zip`). It has two tabs:
+`asset-migrator-<version>-windows-x64.zip`). It has three tabs:
 
 - **PC Assets** — migrates a base tree from a folder (an installed GOG/retail
   copy) or from a disc image. Choose **USA** or **Japanese** for the destination
   (`USA/` or `JPN/`), and optionally convert the `Movie/*.avi` files to `.mp4`.
   The port prefers a `.mp4` sibling of the FMV table's `.avi` and falls back to
   the AVI, so keeping both is safe. Requires `ffmpeg` on `PATH` for the
-  conversion.
+  conversion. It also writes the title menu's font (`Data/TITLEFNT.BIN`), which
+  the title screen's OPTIONS item depends on.
 - **Director's Cut** — builds the `DC/` overlay from a Director's Cut disc image.
   An image is required: a raw 2352-byte `.bin`/`.cue` keeps the `.STR` movies'
   CD-XA audio, which a 2048-byte copy truncates. Every DC room and all
-  backgrounds are migrated.
+  backgrounds are migrated. The arrange game's outfits are also copied into the
+  base tree (`Enemy/EM1052`, `EM1053`, `EM1055`) so they can be worn in any mode
+  as bonus outfits.
+- **Sega Saturn** — builds the `SATURN/` overlay from a Saturn disc image, and
+  copies the Saturn-exclusive outfit into the base tree (`Enemy/EM1061`,
+  `EM1161`) for the same reason.
 
 The tool's own `README.md` covers building it, its options and the headless
 verifier. The same migrations are scriptable on either platform through the
@@ -354,7 +418,8 @@ seconds of a movie is ignored.
 
 Sega Saturn mode carries a second game mode the other releases never had: the
 **Battle Game**, a fixed 15-arena run through `STAGE8` with a preset loadout,
-scored on the ammo you did not spend. It adds a third item to the title menu.
+scored on the ammo you did not spend. It is reached from the title menu's
+EXTRA item.
 
 The Saturn unlocks that item with **any ending**, or with a port-2
 **X + Y + Z + Start** code on the press-start screen. The code is not ported
@@ -433,10 +498,15 @@ on a throttle and takes over slot 0 when a pad appears.
 
 ### Rebinding
 
-Both layouts are editable in-game from the options screen (the original
-"Key Def" / "Joy Def" screens, `src/game/OptionsMenu.cpp`), including the four
-original direction-mapping presets. Bindings are persisted with the rest of
-the video/sound settings on exit.
+Both layouts are editable from the INPUT page of the title screen's OPTIONS
+menu and from the in-game options menu (see *Options menu* above). Bindings
+are saved to `config.ini`. The original in-game screen ("Key Def" / "Joy Def",
+with its four direction-mapping presets, `src/game/OptionsMenu.cpp`) is no
+longer reachable.
+
+As in the original, a save file carries the bindings it was made with, and
+loading it restores them - so loading a save made before a rebind brings the
+old layout back until you save again.
 
 ### System keys
 

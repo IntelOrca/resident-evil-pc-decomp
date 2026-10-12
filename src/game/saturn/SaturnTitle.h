@@ -1,62 +1,55 @@
-// SaturnTitle.h - the Sega Saturn build's title menu, drawn in the original
-// Resident Evil typeface.
+// SaturnTitle.h - the title menu's text, drawn in the original Resident Evil
+// option typeface.
 //
-// The Saturn mode draws its menu in a typeface of its own. The port keeps the PC/PS1
-// look there instead, so in Saturn mode the second title state - the one after
-// PRESS START BUTTON - is
+// This started as the Sega Saturn mode's title menu (hence the file's place and
+// name) and is now the title menu of every mode. The second title state - the
+// one after PRESS START BUTTON - is
 //
 //     NEW GAME
 //     LOAD GAME
-//     EXTRA
+//     EXTRA          only while the Battle Game is offered
+//     OPTIONS
 //
-// with EXTRA selectable only once the Battle Game is unlocked. EXTRA opens a
-// submenu that lists the extra game modes; today that is
+// EXTRA opens a submenu that lists the extra game modes (BATTLE GAME, BACK) and
+// OPTIONS chains the options state (GameOptions.h). The item lists and what
+// each one does live in TitleScreen.cpp; this file only turns text into art.
 //
-//     BATTLE GAME
-//     BACK
-//
-// and every later extra mode is one more entry in the table in SaturnTitle.cpp,
-// ahead of BACK.
-//
-// The text comes from the bitmap font the asset migrator writes as
-// SATURN/Data/TITLEFNT.BIN (tools/asset_migrator/src/core/TitleFont.h). When
-// that file is absent nothing here is used: the title keeps its previous
-// behaviour (the USA sheet's two rows plus a BATTLE GAME row built from the
-// port's 8x14 font), so a half-migrated tree still works.
-//
-// Used in Saturn mode, and in OG when the Battle Game is offered (the font is read
-// from the SATURN overlay either way). DC keeps its own title art.
+// The text comes from the bitmap font the asset migrator writes into the BASE
+// tree as Data/TITLEFNT.BIN (tools/asset_migrator/src/core/TitleFont.h). The
+// PC tab writes it; the Saturn tab used to write it into the SATURN overlay
+// instead, and a tree migrated that way is still read. When neither file is
+// there nothing here is used: the title keeps the art the release shipped with
+// (NEW GAME / LOAD GAME, plus a BATTLE GAME row built from the 8x14 font) and
+// has no OPTIONS item.
 #pragma once
 
-// g_titleSelectionId values. 0 = PRESS START, 1/2 = NEW/LOAD GAME (as in the
-// USA build). 3 is EXTRA, which never leaves the title: it opens the submenu.
-// The submenu's entries follow, and the first is the Battle Game - the value
-// title_state() acts on.
+// g_titleSelectionId values outside the Director's Cut. 0 = PRESS START, 1/2 =
+// NEW/LOAD GAME (as in the USA build). 3 is EXTRA, which never leaves the
+// title: it opens the submenu. The submenu's entries follow, and the first is
+// the Battle Game - the value title_state() acts on. (The Director's Cut has
+// its difficulty cells at 3-6 and numbers these from 8; see TitleScreen.cpp.)
 #define SATURN_TITLE_EXTRA_ITEM     3
 #define SATURN_TITLE_EXTRAS_FIRST   4
 
 // Loads data\titlefnt.bin once. Returns 1 when the font is usable.
 int saturn_title_font_load(void);
 
-// Writes the three main-menu frames (selection 1, 2, 3 bright) into an already
-// loaded 256x256 4bpp USA title sheet, below PRESS START BUTTON's rows. The
-// sheet's own palette is used: index 1 = bright, 2 = dim.
-void saturn_title_draw_main_frames(unsigned char* usaTimPage, int battleUnlocked);
+// The menu sheet: a 256x256 4bpp TIM in the USA title sheet's grey palette and
+// CLUT row, holding two strips per item - the text centred on the sheet's 256
+// columns, once dim and once bright:
+//
+//     item i, dim     rows i * 24      .. i * 24 + 11
+//     item i, bright  rows i * 24 + 12 .. i * 24 + 23
+//
+// The title draws one strip per menu line, so a menu of any length fits on the
+// screen without a frame per cursor position. Returns the TIM's size, 0 when the
+// font is not loaded or there are more than SATURN_TITLE_STRIP_MAX items.
+#define SATURN_TITLE_STRIP_H      12
+#define SATURN_TITLE_STRIP_PITCH  24
+#define SATURN_TITLE_STRIP_MAX    10
+unsigned int saturn_title_build_strips(unsigned char* out,
+                                       const char* const* items, int count);
 
-// Builds the extras submenu sheet as a complete TIM (256x256, 4bpp, the same
-// grey palette and CLUT row as the USA sheet). Returns its size, 0 on failure.
-unsigned int saturn_title_build_extras_page(unsigned char* out);
-
-// The three main-menu frames (selection 1, 2, 3 bright, frame f at row f * 64) as a
-// sheet of their own, for the Director's Cut, whose title sheet has no room for
-// them. Same format as the extras sheet.
-unsigned int saturn_title_build_main_page(unsigned char* out);
-
-// Number of submenu entries, BACK included. Selection SATURN_TITLE_EXTRAS_FIRST
-// + n is entry n; the last one is BACK.
-int saturn_title_extras_count(void);
-
-// Screen rows within the sheets: vramY of selection 1..3's frame on the main
-// sheet, and the frame height shared by both sheets.
-#define SATURN_TITLE_FRAME_H        64
-#define SATURN_TITLE_MAIN_FRAME_Y   64
+// Makes the next saturn_title_font_load() look for the file again. The answer
+// is cached, and the options menu can change the asset region under it.
+void saturn_title_font_forget(void);

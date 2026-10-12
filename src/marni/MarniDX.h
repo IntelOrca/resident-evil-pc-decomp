@@ -75,8 +75,16 @@ public:
     // TRUE once Create() succeeded and the device is still valid.
     BOOL IsReady() const;
 
-    // Returns the current back-buffer dimensions (0,0 if not ready).
+    // Returns the size of the area the game draws into (0,0 if not ready).
+    // That is the back buffer, except under SetAspectLock, where it is the
+    // 4:3 rectangle inside it.
     void GetBackBufferSize(DWORD* outWidth, DWORD* outHeight) const;
+
+    // TRUE (the default) keeps the picture 4:3: the game is drawn into the
+    // largest centred 4:3 rectangle of the back buffer and the rest stays
+    // black, so a widescreen monitor or window size no longer stretches it.
+    // FALSE draws over the whole buffer.
+    void SetAspectLock(BOOL lock);
 
     // Apply a new display mode (resize the swap chain). 0 on failure.
     int  ChangeDisplayMode(DWORD newWidth, DWORD newHeight, BOOL fullScreen);

@@ -1,4 +1,4 @@
-// SaturnTitle.cpp - the Sega Saturn build's title menu in the original typeface.
+// SaturnTitle.cpp - the title menu's text in the original option typeface.
 // See SaturnTitle.h. The font file layout is documented in
 // tools/asset_migrator/src/core/TitleFont.h.
 #include "SaturnTitle.h"
@@ -28,45 +28,67 @@ static int           s_fontSpacing = 0;
 static int           s_fontSpaceAdvance = 0;
 static int           s_fontState = 0;  // 0 = not tried, 1 = loaded, -1 = unusable
 
+// LoadFile reports a missing file as (size_t)-1; anything outside the buffer is
+// refused the same way.
+static int font_read(void)
+{
+    // Probe first: LoadFile on a missing file is an error path the rest of the
+    // engine does not expect to take quietly.
+    if (!AssetBaseHasFile(-1, "Data/TITLEFNT.BIN")) return 0;
+    const size_t n = LoadFile(GAME_DATA_ROOT "data\\titlefnt.bin", s_fontFile, 0x20);
+    return (n != (size_t)-1 && n >= 8 && n <= FONT_FILE_MAX) ? (int)n : 0;
+}
+
+void saturn_title_font_forget(void)
+{
+    s_fontState = 0;
+}
+
 int saturn_title_font_load(void)
 {
     if (s_fontState != 0) return s_fontState > 0;
     s_fontState = -1;
 
-    // The font lives in the SATURN overlay. In OG the overlay is not searched, so
-    // look in it explicitly for the length of the load (the Battle Game is
-    // offered in OG when the SATURN assets are imported).
+    // The base tree's copy, read with no overlay in the way so every mode gets
+    // the same file.
     char savedOverlay[16];
     strncpy(savedOverlay, GetAssetModeName(), sizeof(savedOverlay) - 1);
     savedOverlay[sizeof(savedOverlay) - 1] = '\0';
-    const int borrowed = !g_bSaturnMode;
-    if (borrowed) SetAssetMode("SATURN");
-    const size_t n = LoadFile(GAME_DATA_ROOT "data\\titlefnt.bin", s_fontFile, 0x20);
-    if (borrowed) SetAssetMode(savedOverlay);
-    if (n == (size_t)-1 || n < 8 || n > FONT_FILE_MAX) {
-        dbg_printf("[TITLE] titlefnt.bin not available - Saturn title keeps the old rows\n");
+    SetAssetMode("");
+    int n = font_read();
+    // A tree migrated before the font moved has it in the SATURN overlay only.
+    if (n == 0 && AssetOverlayHasFile("SATURN", "Data/TITLEFNT.BIN")) {
+        SetAssetMode("SATURN");
+        const size_t got = LoadFile(GAME_DATA_ROOT "data\\titlefnt.bin", s_fontFile, 0x20);
+        n = (got != (size_t)-1 && got >= 8 && got <= FONT_FILE_MAX) ? (int)got : 0;
+    }
+    SetAssetMode(savedOverlay);
+
+    if (n == 0) {
+        dbg_printf("[TITLE] titlefnt.bin not available - the title keeps its own rows "
+                   "and has no OPTIONS item (re-run the asset migrator's PC tab)\n");
         return 0;
     }
     if (memcmp(s_fontFile, "TFNT", 4) != 0) return 0;
 
     const int height = s_fontFile[4];
     const int count = s_fontFile[7];
-    if (height <= 0 || height > 32 || count <= 0) return 0;
+    if (height <= 0 || height > SATURN_TITLE_STRIP_H || count <= 0) return 0;
 
     memset(s_glyphs, 0, sizeof(s_glyphs));
     size_t pos = 8;
     for (int i = 0; i < count; i++) {
-        if (pos + 2 > n) return 0;
+        if (pos + 2 > (size_t)n) return 0;
         const unsigned char ch = s_fontFile[pos];
         const int w = s_fontFile[pos + 1];
-        if (w == 0 || pos + 2 + (size_t)w * height > n) return 0;
+        if (w == 0 || pos + 2 + (size_t)w * height > (size_t)n) return 0;
         if (ch < FONT_MAX_GLYPH) {
             s_glyphs[ch].levels = s_fontFile + pos + 2;
             s_glyphs[ch].width = w;
         }
         pos += 2 + (size_t)w * height;
     }
-    if (pos != n) return 0;
+    if (pos != (size_t)n) return 0;
 
     s_fontHeight = height;
     s_fontSpacing = s_fontFile[5];
@@ -132,73 +154,11 @@ static void draw_text(unsigned char* pix, int y, const char* text, int bright)
     }
 }
 
-// Lines sit 18 rows apart, as NEW GAME / LOAD GAME do in the original art
-// (rows 84 and 102), and the first one a row below the frame's top, which is
-// what the positions in the title table assume.
-#define LINE_PITCH  18
-#define LINE_TOP    1
-
-// The USA sheet's copyright strip: where it is, how tall, and where in a frame
-// it goes. The original cell has it at 83 + 48 = 131, straight under LOAD GAME;
-// with a third line the strip drops to the frame's last 9 rows (55..63) so EXTRA
-// (rows 37..47) keeps a gap above it.
-#define COPYRIGHT_SRC_Y    131
-#define COPYRIGHT_ROWS     9
-#define COPYRIGHT_FRAME_Y  (SATURN_TITLE_FRAME_H - COPYRIGHT_ROWS)
-
-static void draw_frame(unsigned char* pix, int frameTop, const char* const* items,
-                       int count, int selected)
+unsigned int saturn_title_build_strips(unsigned char* out,
+                                       const char* const* items, int count)
 {
-    for (int i = 0; i < count; i++) {
-        draw_text(pix, frameTop + LINE_TOP + i * LINE_PITCH, items[i], i == selected);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// The menus
-// ---------------------------------------------------------------------------
-static const char* const kMainItems[3] = { "NEW GAME", "LOAD GAME", "EXTRA" };
-
-// The extra game modes. Add a mode by inserting its entry before BACK; the
-// title's confirm path decides what it starts (see title_state()).
-static const char* const kExtraItems[] = { "BATTLE GAME", "BACK" };
-#define EXTRA_COUNT  ((int)(sizeof(kExtraItems) / sizeof(kExtraItems[0])))
-
-int saturn_title_extras_count(void)
-{
-    return EXTRA_COUNT;
-}
-
-void saturn_title_draw_main_frames(unsigned char* usaTimPage, int battleUnlocked)
-{
-    (void)battleUnlocked;   // EXTRA is always drawn; the cursor simply never lands on
-                            // it while locked (title_menu_last_item())
-    unsigned char* pix = usaTimPage + 0x40;
-
-    // Each of the original option cells carries the copyright line under its
-    // text (rows 131..139 of the sheet, 48 rows below NEW GAME's cell top at 83).
-    // Keep one copy; the frames below overwrite the rows it sits in.
-    unsigned char footer[COPYRIGHT_ROWS * SHEET_STRIDE];
-    memcpy(footer, pix + COPYRIGHT_SRC_Y * SHEET_STRIDE, sizeof(footer));
-
-    memset(pix + SATURN_TITLE_MAIN_FRAME_Y * SHEET_STRIDE, 0,
-           (SHEET_H - SATURN_TITLE_MAIN_FRAME_Y) * SHEET_STRIDE);
-    for (int sel = 0; sel < 3; sel++) {
-        const int top = SATURN_TITLE_MAIN_FRAME_Y + sel * SATURN_TITLE_FRAME_H;
-        draw_frame(pix, top, kMainItems, 3, sel);
-        memcpy(pix + (top + COPYRIGHT_FRAME_Y) * SHEET_STRIDE, footer, sizeof(footer));
-    }
-}
-
-// A complete 256x256 4bpp TIM in the USA sheet's grey palette and CLUT row, with
-// `frames` frames of SATURN_TITLE_FRAME_H rows, frame f drawing `items` with item
-// f bright. The extras submenu and, where the USA sheet is not the base (the
-// Director's Cut), the main menu are both this.
-static unsigned int build_sheet(unsigned char* out, const char* const* items,
-                                int count, int frames)
-{
-    if (out == NULL || s_fontState <= 0) return 0;
-    if (frames * SATURN_TITLE_FRAME_H > SHEET_H) return 0;   // 4 frames at most
+    if (out == NULL || items == NULL || s_fontState <= 0) return 0;
+    if (count <= 0 || count > SATURN_TITLE_STRIP_MAX) return 0;
 
     const unsigned int pixBytes = SHEET_STRIDE * SHEET_H;
     const unsigned int headerBytes = 0x40;
@@ -225,18 +185,10 @@ static unsigned int build_sheet(unsigned char* out, const char* const* items,
     *(unsigned short*)p = SHEET_W / 4;        p += 2;
     *(unsigned short*)p = SHEET_H;            p += 2;
 
-    for (int f = 0; f < frames; f++) {
-        draw_frame(p, f * SATURN_TITLE_FRAME_H, items, count, f);
+    for (int i = 0; i < count; i++) {
+        const int y = i * SATURN_TITLE_STRIP_PITCH;
+        draw_text(p, y, items[i], 0);
+        draw_text(p, y + SATURN_TITLE_STRIP_H, items[i], 1);
     }
     return headerBytes + pixBytes;
-}
-
-unsigned int saturn_title_build_extras_page(unsigned char* out)
-{
-    return build_sheet(out, kExtraItems, EXTRA_COUNT, EXTRA_COUNT);
-}
-
-unsigned int saturn_title_build_main_page(unsigned char* out)
-{
-    return build_sheet(out, kMainItems, 3, 3);
 }

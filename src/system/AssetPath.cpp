@@ -252,6 +252,26 @@ int AssetOverlayHasFile(const char* mode, const char* relPath)
     return 1;
 }
 
+int AssetBaseHasFile(int jpn, const char* relPath)
+{
+    if (relPath == NULL) return 0;
+    if (jpn < 0) jpn = s_assetIsJpn;
+    char candidate[300];
+    int n;
+    if (s_base[0] == '\0') {
+        n = sprintf_s(candidate, sizeof(candidate), "%s%s", jpn ? ROOT_JPN : ROOT_USA, relPath);
+    } else {
+        n = sprintf_s(candidate, sizeof(candidate), "%s%c%s%c%s",
+                      s_base, PATH_SEP, jpn ? "JPN" : "USA", PATH_SEP, relPath);
+    }
+    if (n < 0) return 0;
+    char probeBuf[300];
+    FILE* fp = fopen(plat_normalize_path(candidate, probeBuf, sizeof(probeBuf)), "rb");
+    if (fp == NULL) return 0;
+    fclose(fp);
+    return 1;
+}
+
 void SetAssetMode(const char* mode)
 {
     if (mode == NULL || mode[0] == '\0') {

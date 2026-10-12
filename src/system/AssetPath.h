@@ -114,6 +114,11 @@ const char*  GetAssetModeName(void);
 // mode borrow another mode's content (the Battle Game in OG/DC) only after
 // checking that mode's folder was actually imported.
 int          AssetOverlayHasFile(const char* mode, const char* relPath);
+// 1 when "<base>/<USA|JPN>/<relPath>" exists. `jpn` < 0 asks about the tree
+// that is active now, 0 about the USA tree and 1 about the JPN one - the
+// title-screen options menu uses the last two to tell whether a region can be
+// selected at all. The path is case-resolved like every other asset path.
+int          AssetBaseHasFile(int jpn, const char* relPath);
 
 // Rewrites whichever known asset-root form a path was compiled with (debug
 // ".\assets\USA\" or retail ".\usa\") to the current runtime root, writing the

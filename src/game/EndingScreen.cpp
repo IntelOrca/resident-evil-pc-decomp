@@ -30,6 +30,7 @@
 #include "BioCard.h"
 #include "PrintText.h"
 #include "saturn/SaturnBattle.h"
+#include "Bonus.h"
 #include "../system/AssetPath.h"
 #include <cstdio>
 #include <cstring>
@@ -1126,6 +1127,15 @@ void ending_state(void)
         slot++;
     }
     (void)slot;
+
+    // Port: record what this run earned in SAVE/bonus.dat as well, so it is
+    // not tied to the next-cycle save written below (Bonus.h has the rules).
+    // Each argument is the original's own decision from the lines above.
+    bonus_on_ending(s_hasSpecialKey != 0 && (!g_bDcMode || g_DcDifficulty < DC_DIFFICULTY_ADVANCED),
+                    (s_effectsEnabled != 0) || (s_grantRocket != 0),
+                    s_underTimeLimit != 0,
+                    g_bDcMode && g_DcDifficulty >= DC_DIFFICULTY_ADVANCED
+                        && (s_endingId == 6 || s_endingId == 7));
 
     Flg_on((int)g_ScenarioFlags, SCENARIO_FLAG_SECOND_PLAYTHROUGH);
 

@@ -173,6 +173,16 @@ struct MarniDX::Impl {
     DWORD                    height        = 0;
     BOOL                     ready         = FALSE;
 
+    // The part of the back buffer the game draws into. It is the whole buffer
+    // unless aspectLock is set, in which case it is the largest centred 4:3
+    // rectangle (see MarniDX::SetAspectLock). Everything that turns game space
+    // into pixels uses the view, never the buffer.
+    BOOL                     aspectLock    = TRUE;
+    DWORD                    viewX         = 0;
+    DWORD                    viewY         = 0;
+    DWORD                    viewW         = 0;
+    DWORD                    viewH         = 0;
+
     // texture handle table (index 0 reserved = NULL)
     TexSlot                  slots[MARNI_MAX_TEXTURES];
 
@@ -187,7 +197,33 @@ struct MarniDX::Impl {
                    int w, int h);
     void ReleaseAllState();
     void ReleaseAllTextures();
+    void UpdateView();
 };
+
+// Recompute the view rectangle from the back buffer size and bind it as the
+// viewport and scissor.
+void MarniDX::Impl::UpdateView()
+{
+    viewX = 0; viewY = 0; viewW = width; viewH = height;
+    if (aspectLock && width > 0 && height > 0) {
+        if (width * 3 > height * 4) {            // wider than 4:3 - bars left/right
+            viewW = height * 4 / 3;
+            viewX = (width - viewW) / 2;
+        } else if (width * 3 < height * 4) {     // taller - bars top/bottom
+            viewH = width * 3 / 4;
+            viewY = (height - viewH) / 2;
+        }
+    }
+    if (!context) return;
+    D3D11_VIEWPORT vp = {};
+    vp.TopLeftX = (float)viewX; vp.TopLeftY = (float)viewY;
+    vp.Width = (float)viewW;    vp.Height = (float)viewH;
+    vp.MaxDepth = 1.0f;
+    context->RSSetViewports(1, &vp);
+    D3D11_RECT sr = { (LONG)viewX, (LONG)viewY,
+                      (LONG)(viewX + viewW), (LONG)(viewY + viewH) };
+    context->RSSetScissorRects(1, &sr);
+}
 
 // ----------------------------------------------------------------------------
 // Global singleton
@@ -676,11 +712,10 @@ BOOL MarniDX::Create(HWND hWnd, int width, int height, BOOL fullScreen,
 
     // bind RTV + set viewport/scissor
     p->context->OMSetRenderTargets(1, &p->rtv, p->depthStencilView);
-    D3D11_VIEWPORT vp = {};
-    vp.Width = (float)p->width; vp.Height = (float)p->height; vp.MaxDepth = 1.0f;
-    p->context->RSSetViewports(1, &vp);
-    D3D11_RECT sr = { 0, 0, (LONG)p->width, (LONG)p->height };
-    p->context->RSSetScissorRects(1, &sr);
+    // The game's picture is 4:3. A fullscreen window covers the monitor,
+    // whatever its shape, and a window can be given a widescreen size, so the
+    // view is pillarboxed inside the buffer rather than stretched over it.
+    p->UpdateView();
     p->context->RSSetState(p->rasterScissor);
 
     p->ready = TRUE;
@@ -703,8 +738,8 @@ BOOL MarniDX::Create(HWND hWnd, int width, int height, BOOL fullScreen,
         }
     }
 
-    if (outWidth)  *outWidth  = (int)p->width;
-    if (outHeight) *outHeight = (int)p->height;
+    if (outWidth)  *outWidth  = (int)p->viewW;
+    if (outHeight) *outHeight = (int)p->viewH;
     return TRUE;
 }
 
@@ -728,8 +763,18 @@ BOOL MarniDX::IsReady() const { return m_pImpl && m_pImpl->ready; }
 
 void MarniDX::GetBackBufferSize(DWORD* w, DWORD* h) const
 {
-    if (w) *w = m_pImpl ? m_pImpl->width  : 0;
-    if (h) *h = m_pImpl ? m_pImpl->height : 0;
+    // The view, not the buffer: every caller uses this to scale game space
+    // onto the screen, and with the aspect lock on the two differ.
+    if (w) *w = m_pImpl ? m_pImpl->viewW : 0;
+    if (h) *h = m_pImpl ? m_pImpl->viewH : 0;
+}
+
+void MarniDX::SetAspectLock(BOOL lock)
+{
+    Impl* p = m_pImpl;
+    if (!p) return;
+    p->aspectLock = lock ? TRUE : FALSE;
+    p->UpdateView();
 }
 
 int MarniDX::ChangeDisplayMode(DWORD newW, DWORD newH, BOOL fullScreen)
@@ -771,11 +816,7 @@ int MarniDX::ChangeDisplayMode(DWORD newW, DWORD newH, BOOL fullScreen)
         p->device->CreateDepthStencilView(p->depthStencil, nullptr,
                                           &p->depthStencilView);
 
-    D3D11_VIEWPORT vp = {};
-    vp.Width = (float)newW; vp.Height = (float)newH; vp.MaxDepth = 1.0f;
-    p->context->RSSetViewports(1, &vp);
-    D3D11_RECT sr = { 0, 0, (LONG)newW, (LONG)newH };
-    p->context->RSSetScissorRects(1, &sr);
+    p->UpdateView();
     p->context->OMSetRenderTargets(1, &p->rtv, p->depthStencilView);
     return 1;
 }
@@ -1071,8 +1112,8 @@ static void DrawQuadInternal(MarniDX::Impl* p, const QuadVertex verts[6],
     // bottom=height, top=0 so that pos.y=0 -> NDC +1 (top) and
     // pos.y=height -> NDC -1 (bottom). Without this swap the image
     // is rendered vertically flipped.
-    BuildOrthoMatrix(&cb.mvp[0][0], 0.0f, (float)p->width,
-                                   (float)p->height, 0.0f);
+    BuildOrthoMatrix(&cb.mvp[0][0], 0.0f, (float)p->viewW,
+                                   (float)p->viewH, 0.0f);
     D3D11_MAPPED_SUBRESOURCE cm = {};
     if (SUCCEEDED(p->context->Map(p->spriteCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &cm))) {
         memcpy(cm.pData, &cb, sizeof(cb));
@@ -1154,8 +1195,8 @@ void MarniDX::DrawTriangles(const float* verts, int triCount, MarniHandle tex,
     p->context->Unmap(p->quadVB, 0);
 
     SpriteConstantBuffer cb;
-    BuildOrthoMatrix(&cb.mvp[0][0], 0.0f, (float)p->width,
-                                   (float)p->height, 0.0f);
+    BuildOrthoMatrix(&cb.mvp[0][0], 0.0f, (float)p->viewW,
+                                   (float)p->viewH, 0.0f);
     D3D11_MAPPED_SUBRESOURCE cm = {};
     if (SUCCEEDED(p->context->Map(p->spriteCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &cm))) {
         memcpy(cm.pData, &cb, sizeof(cb));
@@ -1211,8 +1252,8 @@ void MarniDX::DrawTriangles3D(const float* verts, int triCount, MarniHandle tex,
     p->context->Unmap(p->model3DVB, 0);
 
     SpriteConstantBuffer cb;
-    BuildOrthoMatrix(&cb.mvp[0][0], 0.0f, (float)p->width,
-                                   (float)p->height, 0.0f);
+    BuildOrthoMatrix(&cb.mvp[0][0], 0.0f, (float)p->viewW,
+                                   (float)p->viewH, 0.0f);
     D3D11_MAPPED_SUBRESOURCE cm = {};
     if (SUCCEEDED(p->context->Map(p->spriteCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &cm))) {
         memcpy(cm.pData, &cb, sizeof(cb));
@@ -1279,8 +1320,8 @@ void MarniDX::DrawTrianglesPersp(const float* verts, int triCount, MarniHandle t
     p->context->Unmap(p->model3DVB, 0);
 
     SpriteConstantBuffer cb;
-    BuildOrthoMatrix(&cb.mvp[0][0], 0.0f, (float)p->width,
-                                   (float)p->height, 0.0f);
+    BuildOrthoMatrix(&cb.mvp[0][0], 0.0f, (float)p->viewW,
+                                   (float)p->viewH, 0.0f);
     D3D11_MAPPED_SUBRESOURCE cm = {};
     if (SUCCEEDED(p->context->Map(p->spriteCB, 0, D3D11_MAP_WRITE_DISCARD, 0, &cm))) {
         memcpy(cm.pData, &cb, sizeof(cb));

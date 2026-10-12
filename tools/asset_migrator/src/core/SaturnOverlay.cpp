@@ -32,10 +32,13 @@
 //   Stage6/ROOM61C0/1.RDT          Saturn's two outfits are offered by the room
 //                                  script (core/SaturnWardrobe): on the Saturn
 //                                  they are GAME5 code, not RDT data
-//   Data/TITLEFNT.BIN              the PC/PS1 option typeface for the title menu
-//                                  (NEW GAME / LOAD GAME / EXTRA). Not on the
-//                                  disc - the Saturn menu uses another font -
-//                                  so core/TitleFont.cpp carries the glyphs
+//   (Data/TITLEFNT.BIN, the title menu's typeface, is the PC tab's now: it is
+//   written into the base tree, core/Migrate.cpp)
+//
+// And into the BASE tree, beside the overlay:
+//   <USA|JPN>/Enemy/EM1061.EMD,    copies of the Saturn-exclusive outfit, which
+//   <USA|JPN>/Enemy/EM1161.EMD     the game offers as a bonus outfit in every
+//                                  mode (src/game/Bonus.h)
 //   Sound/Bgm_58, Bgm_59 (battle), Bgm_5a (ranking), Bgm_24
 //                                  the Battle Game's own music, rendered from
 //                                  SND/BATTLE.CDP and SND/NAME.CDP through the
@@ -788,18 +791,15 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
                       std::to_string(relabelled) +
                       " texel(s) moved onto the index-0 transparency key");
     }
-    if (opts.titleFont) {
-        progress.info("title menu font -> Data/TITLEFNT.BIN");
-        const std::vector<uint8_t> font = buildTitleFont();
-        const std::string rel = "Data/TITLEFNT.BIN";
-        if (!makeDirs(joinPath(overlay, "Data")) ||
-            !writeFile(joinPath(overlay, rel), font)) {
-            if (error) *error = "cannot write " + joinPath(overlay, rel);
-            return false;
-        }
-        written.push_back(rel);
-        progress.info("  " + rel + " (" + std::to_string(font.size()) + " bytes)");
-    }
+    // The Saturn-exclusive outfit as a bonus outfit: the game offers it in
+    // every mode once it is unlocked (src/game/Bonus.h), so the converted model
+    // goes into the base tree too. EM1061 / EM1161 are already names no other
+    // release uses, so the copies keep them.
+    progress.info("bonus outfits: the Saturn-exclusive player models -> the base tree");
+    copyBonusOutfits(opts.targetRoot, joinPath(overlay, "Enemy"),
+                     {{"EM1061.EMD", "EM1061.EMD", "Chris, Saturn outfit"},
+                      {"EM1161.EMD", "EM1161.EMD", "Jill, Saturn outfit"}},
+                     progress);
     {
         progress.info("music: the Battle Game's own tracks -> rendered from the sequences");
         // The Battle Game's results screens (RANKING.PRG 0x0602B1E4): their
