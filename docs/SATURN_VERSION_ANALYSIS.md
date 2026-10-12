@@ -2482,9 +2482,9 @@ leading animation headers match (the first 1 KB is identical), so the effect
 this room now come from the Saturn's table.
 
 **What the port does with all this**: it overlays the room — the Saturn's
-`ROOM5130.RDT` is LZ77-decoded into `SATURN/Stage5/ROOM5130.RDT` and
-`ROOM5131.RDT` (the same file under both names — the PC ships one per character
-variant, the Saturn has a single room), which removes the magazine clip with no
+`ROOM5130.RDT` / `ROOM5131.RDT` are each LZ77-decoded into the same name under
+`SATURN/Stage5/` (the disc has one per character variant, as the PC does; they
+differ, so one must not stand in for the other), which removes the magazine clip with no
 engine change; it overlays the background (`SATURN/Stage5/RC5130..5137.pak`);
 and in Saturn mode `load_room_masks` reads the mask from the room file instead of
 `objspr/`, which is what turns the vats grey. OG and DC keep the pak.

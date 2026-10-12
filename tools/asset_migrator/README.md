@@ -183,8 +183,8 @@ rendered sound.
   colour-key -> PC index-0 transparency relabel. The arenas reuse campaign
   backgrounds, so no `.BSS` is converted.
 - **Laboratory Tyrant room** -> `SATURN/Stage5/`: `RC5130..5137.pak` (background)
-  and `ROOM5130.RDT` + `ROOM5131.RDT` (room data; the same file under both names,
-  since the PC ships one per character variant and the Saturn has one room). The
+  and `ROOM5130.RDT` + `ROOM5131.RDT` (room data; each decoded from its own disc
+  file, Chris and Jill differ). The
   Saturn re-cut this room's **art and its data**: the PC's init script is 28
   bytes — one `item_model_set` record — longer, and its `item_icons` table holds
   two 40x30 icons against the Saturn's one, i.e. a pickable item (the magazine

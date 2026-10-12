@@ -138,9 +138,10 @@ const RoomBg kRoomBgs[] = {
 };
 
 // Campaign rooms whose *data* the Saturn also cut differently, and which are
-// therefore overlaid as a whole .RDT rather than patched in code. The PC ships
-// two files per room (the two character variants, chosen by the last digit of
-// room5S RRc.rdt); the Saturn has one, so both names get the same file.
+// therefore overlaid as a whole .RDT rather than patched in code. Both ship two
+// files per room (the two character variants, chosen by the last digit of
+// room5S RRc.rdt) and the Saturn's disc has both too, so each is listed and read
+// from its own file: copying the Chris room to the Jill name gave Jill his scripts.
 struct RoomRdt {
     const char* folder;
     const char* rdt;
@@ -158,13 +159,12 @@ const char* const kWardrobeRdts[][2] = {
 };
 constexpr int kWardrobeCount = (int)(sizeof(kWardrobeRdts) / sizeof(kWardrobeRdts[0]));
 
+#define LAB_TYRANT_WHY     "Laboratory B4: the PC's room has one item the Saturn's does not (the "     "init script is 28 bytes - one item_model_set - longer and item_icons "     "holds two 40x30 icons against one), so the Saturn's room is loaded "     "instead of the PC's"
 const RoomRdt kRoomRdts[] = {
-    {"STAGE5", "ROOM5130.RDT", '5', 0x13,
-     "Laboratory B4: the PC's room has one item the Saturn's does not (the "
-     "init script is 28 bytes - one item_model_set - longer and item_icons "
-     "holds two 40x30 icons against one), so the Saturn's room is loaded "
-     "instead of the PC's"},
+    {"STAGE5", "ROOM5130.RDT", '5', 0x13, LAB_TYRANT_WHY},
+    {"STAGE5", "ROOM5131.RDT", '5', 0x13, LAB_TYRANT_WHY},
 };
+#undef LAB_TYRANT_WHY
 
 // Jill's flamethrower (see SaturnEmdOptions::donorEmd). The disc's names of the
 // models Jill is loaded from; Chris's CHAR10 is the one whose page has the texels.
@@ -647,11 +647,9 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
                 return false;
             }
             progress.info(std::string("  ") + r.rdt + ": " + r.why);
-            // Both character variants resolve to the one room the Saturn has.
-            for (int variant = 0; variant < 2; ++variant) {
-                char name[32];
-                std::snprintf(name, sizeof(name), "ROOM%c%02X%d.RDT",
-                              r.stageDigit, r.roomId, variant);
+            // One file per character variant, named as the disc names it.
+            {
+                const char* name = r.rdt;
                 const std::string rel =
                     std::string("Stage") + r.stageDigit + "/" + name;
                 if (!writeFile(joinPath(overlay, rel), rdt)) {

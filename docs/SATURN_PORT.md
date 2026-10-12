@@ -717,9 +717,9 @@ magazine clip.
 
 **So the port overlays the room, it does not patch it.** The Saturn's
 `STAGE5/ROOM5130.RDT` is LZ77-decoded into
-`SATURN/Stage5/ROOM5130.RDT` **and** `ROOM5131.RDT` (the same file under both
-names: the PC ships one file per character variant and the Saturn has a single
-room), and the engine picks it up through the sparse overlay at
+`SATURN/Stage5/ROOM5130.RDT` (Chris) **and** `ROOM5131.RDT` (Jill), each from
+its own disc file (the disc has both; they differ, and copying Chris's to Jill's
+name made Jill's lab trigger Chris's cutscene), and the engine picks it up through the sparse overlay at
 `LoadFile`'s existing `ResolveAssetRoot` call. The clip then simply is not
 placed, because the Saturn's script has no record for it — no flag clearing, no
 engine special case, and as a bonus the record that indexed
