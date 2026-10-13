@@ -235,7 +235,6 @@ static int           s_dbgFlagBit = 0;          // flag editor: selected bit, AB
 static int           s_dbgPrevKeys = 0;         // edge-detect sample of the previous frame
 static int           s_dbgPrevF1 = 0;           // edge-detect sample of F1 across open/close
 static int           s_dbgRoomChangeArmed = 0;  // set on confirm, consumed by the game_loop hook
-static int           s_dbgRestoreVariant = 0;   // SCENARIO_FLAG_STAGE_VARIANT was cleared for the transition
 static unsigned char s_dbgDoorRecord[0x18];     // synthetic door record (must outlive the transition)
 
 // Input bit masks for s_dbg*Keys sampling
@@ -457,7 +456,6 @@ static void DebugRoomChange_Trigger(void)
     // already where the arena's spawn record puts them.
     if (DebugBattleRunActive() && stage == SATURN_BATTLE_STAGE_ID) {
         s_dbgRoomChangeArmed = 0;
-        s_dbgRestoreVariant = 0;
         dbg_printf("[debugmenu] room change: battle arena %d (ROOM 80%X0)\n",
                    s_dbgRoom, s_dbgRoom);
         saturn_battle_debug_warp(s_dbgRoom);
@@ -488,14 +486,20 @@ static void DebugRoomChange_Trigger(void)
     s_dbgDoorRecord[0x0B] = 0;      // entry camera 0; no camera-only (0x80) / silent (0x40) flags
     s_dbgDoorRecord[0x16] = 0xFF;   // no key item
 
-    // room_transition_load adds 5 to stages 0/1 when
-    // SCENARIO_FLAG_STAGE_VARIANT is set (the return-mansion remap). Clear it
-    // for the transition and restore it once the destination room is loaded
-    // so the menu can reach the exact stage it displays.
-    s_dbgRestoreVariant = 0;
-    if (stage < 2 && Flg_ck((int)g_ScenarioFlags, SCENARIO_FLAG_STAGE_VARIANT) != 0) {
+    // SCENARIO_FLAG_STAGE_VARIANT is the game's "back from the guardhouse"
+    // bit (ROOM40C's script sets it once Plant 42 is dead). It is what
+    // room_transition_load reads to add 5 to stages 0/1 (the return-mansion
+    // remap), and what the mansion rooms' own init scripts test to choose
+    // their enemies: ROOM207/707 spawn zombies (id 0x11) with it clear and
+    // Hunters (id 6) with it set. The stage only picks the files, so a
+    // return-mansion room entered with the bit clear had zombies on the
+    // Hunters' sound bank. Make the bit follow the mansion stage chosen
+    // here, and leave it that way, so the room and the doors out of it
+    // agree; the other stages do not depend on it and keep the save's.
+    if (stage == STAGE_MANSION_1F || stage == STAGE_MANSION_2F) {
         FUN_00473f10((int*)g_ScenarioFlags, SCENARIO_FLAG_STAGE_VARIANT);
-        s_dbgRestoreVariant = 1;
+    } else if (stage == STAGE_MANSION_RETURN_1F || stage == STAGE_MANSION_RETURN_2F) {
+        Flg_on((int)g_ScenarioFlags, SCENARIO_FLAG_STAGE_VARIANT);
     }
 
     s_dbgRoomChangeArmed = 1;
@@ -631,12 +635,6 @@ void DebugRoomChange_ApplyPendingPlacement(void)
         return;
     }
     s_dbgRoomChangeArmed = 0;
-
-    // Restore the stage-variant bit cleared by DebugRoomChange_Trigger.
-    if (s_dbgRestoreVariant != 0) {
-        Flg_on((int)g_ScenarioFlags, SCENARIO_FLAG_STAGE_VARIANT);
-        s_dbgRestoreVariant = 0;
-    }
 
     unsigned char* table = g_RoomActionTable;
     unsigned char* tail  = (unsigned char*)g_RoomActionTail;
