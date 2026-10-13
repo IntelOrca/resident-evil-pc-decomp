@@ -382,6 +382,17 @@ void TestHooks_StartAttractDemo(void)
     // background quad lands full-screen in oracle captures.
     CenterScreenOrigin();
 
+    // The background quad is modulated by the global sprite colour. The normal
+    // boot leaves it white: logos_state calls setSomeColor(128,128,128) before
+    // chaining title_state, and nothing on the title/attract path changes it.
+    // This hook skips the logos state, so without this call g_color_* stays at
+    // its 0.0 default and OT_InsertPrimitive builds the background quad with a
+    // black colour: the dark base layer of every room background is hidden,
+    // leaving only the lit mask overlays visible on black. TestHooks_StartNewGame
+    // reproduces the same side effect for the new-game boot.
+    extern void setSomeColor(int r, int g, int b);
+    setSomeColor(128, 128, 128);
+
     // The attract path's own PRNG normalisation is game_loop's srand(0) once
     // MSF2_ATTRACT_DEMO is set (GameLoop.cpp:61-64) - the PC attract reels were
     // recorded against that seed. Pinning it here as well makes anything
