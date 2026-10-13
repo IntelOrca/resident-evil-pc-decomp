@@ -111,6 +111,17 @@ static_assert(sizeof(TextureDraw) == 0x54, "TextureDraw size mismatch");
 #define SPRITE_FLAG_VARIANT    0x08u  // GetTextureVariant() != 0; see the note
 #define SPRITE_FLAG_MIRROR_U   0x10u  // <- TEXDESC_MIRROR_U
 #define SPRITE_FLAG_MIRROR_V   0x20u  // <- TEXDESC_MIRROR_V
+// Port-only (the original never sets this bit). Variant 2 is the PS1's ABR 1,
+// background + sprite. The PC renderer has a single blend - 0x0042c090 always
+// sets SRCALPHA / INVSRCALPHA and feeds it the 0x80 from g_dwTexVariantBlend -
+// so it flattens the additive mode into the same 50% average as ABR 0, which
+// is why the 1997 PC map looks washed out next to the PS1's. The 2D menu
+// producers (display_texture, AddSprite_Ex) raise this for a variant-2
+// descriptor and the flush draws it additively instead.
+#define SPRITE_FLAG_ADDITIVE   0x40u
+
+// The PS1 blend of a 2D menu sprite, on top of SpriteBuildFlags().
+#define TEXDESC_VARIANT_PS1_ADD 2     // GetTextureVariant() value of ABR 1
 
 // SPRITE_FLAG_VARIANT is set by every producer that builds flags from a
 // descriptor, and no draw path reads it - the translucency it implies is
@@ -150,6 +161,17 @@ static inline unsigned int SpriteBuildFlags(unsigned int textureFlags) {
     unsigned int flags;
     BuildSpriteRenderFlags(textureFlags, &flags);
     if (GetTextureVariant(textureFlags) != 0) flags |= SPRITE_FLAG_VARIANT;
+    return flags;
+}
+
+// SpriteBuildFlags() for the 2D menu producers: adds SPRITE_FLAG_ADDITIVE for
+// a PS1-additive descriptor. Scene sprites (room masks, effects, the lab
+// terminal) keep the PC blend - their translucency is tuned against it.
+static inline unsigned int SpriteBuildMenuFlags(unsigned int textureFlags) {
+    unsigned int flags = SpriteBuildFlags(textureFlags);
+    if (GetTextureVariant(textureFlags) == TEXDESC_VARIANT_PS1_ADD) {
+        flags |= SPRITE_FLAG_ADDITIVE;
+    }
     return flags;
 }
 

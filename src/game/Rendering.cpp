@@ -798,7 +798,8 @@ int display_texture(TextureDesc* texture, unsigned short depth, int slot, int pa
     cmd->type = 10;
     cmd->sortClass = sortClass;
 
-    cmd->spriteFlags = SpriteBuildFlags(texture->flags);
+    cmd->spriteFlags = (sortClass == SPRITE_CLASS_NORMAL)
+        ? SpriteBuildMenuFlags(texture->flags) : SpriteBuildFlags(texture->flags);
 
     cmd->r = (float)texture->colorMulR * g_ColorScaleFactor;
     cmd->g = (float)texture->colorMulG * g_ColorScaleFactor;
@@ -925,7 +926,8 @@ static int AddSpriteEx_Core(TextureDesc* texture, unsigned short depth, int slot
     cmd->type = 10;
     cmd->sortClass = sortClass;
 
-    cmd->spriteFlags = SpriteBuildFlags(texture->flags);
+    cmd->spriteFlags = (sortClass == SPRITE_CLASS_NORMAL)
+        ? SpriteBuildMenuFlags(texture->flags) : SpriteBuildFlags(texture->flags);
 
     cmd->r = (float)texture->colorMulR * g_ColorScaleFactor;
     cmd->g = (float)texture->colorMulG * g_ColorScaleFactor;

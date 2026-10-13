@@ -596,6 +596,7 @@ def resolve_sfx(disc, log):
             if b is not None:
                 trials += [(key, s) for s in range(len(b.recs)) if (key, s) not in named]
         best = None
+        own = None
         best_any = None
         found = []  # (ident, key, slot) of every resolvable candidate
         for key, slot in trials:
@@ -617,6 +618,16 @@ def resolve_sfx(disc, log):
                 best_any = cand
             if accepted(w, e, ratio, exact) and (best is None or cand[0] > best[0]):
                 best = cand
+            if exact and w >= 0.5 and e >= 0.9 and (own is None or cand[0] > own[0]):
+                own = cand
+        # Every short blip has the same envelope, so a neighbour that won on
+        # envelope with NO waveform match loses to the table's own slot when
+        # that one's waveform does correlate. This is CHRIS09 (the map-open
+        # blip, 0.18 s): slot 9 scores wave 0.675 / env 0.935, under the bar
+        # above, and slot 10 - the cursor sample at another pitch, wave 0.014 /
+        # env 0.976 - took the name.
+        if best is not None and own is not None and not best[6] and best[1] < 0.1:
+            best = own
         if best is None:
             if best_any is None:
                 rejected.append((name, 'no PS1 candidate'))

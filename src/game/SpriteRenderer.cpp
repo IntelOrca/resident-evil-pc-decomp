@@ -341,7 +341,20 @@ void FlushSpriteCommandsRange(unsigned int minDepth, unsigned int maxDepth,
         if (cmd->spriteFlags & SPRITE_FLAG_MIRROR_U) { float t = u0; u0 = u1; u1 = t; }
         if (cmd->spriteFlags & SPRITE_FLAG_MIRROR_V) { float t = v0; v0 = v1; v1 = t; }
 
-        MarniDrawSprite(x, y, w, h, u0, v0, u1, v1, color, srv);
+        if (cmd->spriteFlags & SPRITE_FLAG_ADDITIVE) {
+            MarniDrawSpriteAdd(x, y, w, h, u0, v0, u1, v1, color, srv);
+            // The PS1 blends only the STP texels; the rest of the sprite is
+            // opaque. Where the page was loaded with that split, lay its
+            // non-STP texels back over the additive result. The base-handle
+            // test drops a split left behind by a loader that replaced the
+            // page without going through LoadTexturePage.
+            MarniHandle opaque = g_TexturePageOpaqueSRV[texSlot];
+            if (opaque != MARNI_NULL_HANDLE && g_TexturePageOpaqueBase[texSlot] == srv) {
+                MarniDrawSprite(x, y, w, h, u0, v0, u1, v1, color | 0xFF000000u, opaque);
+            }
+        } else {
+            MarniDrawSprite(x, y, w, h, u0, v0, u1, v1, color, srv);
+        }
     }
 }
 

@@ -2173,10 +2173,12 @@ static int menu_map_state_machine(void)
             play_sfx(3, 9, 0);
         }
         if ((dpad_pressed_byte1() & 0x80) != 0) {
-            // Cancel: start the shrink (zoom state 7) and leave the tab
+            // Cancel: start the shrink (zoom state 7). The tab is NOT left
+            // here (0x00487100 returns 0): the shrink ends in the browser
+            // (map_display_animate case 9 -> state 0), and only a cancel
+            // there returns -1.
             MAP_ZOOM_STATE = 7;
             play_sfx(3, 5, 0);
-            return -1;
         }
         break;
     default:
@@ -2741,12 +2743,14 @@ static const char* const g_MapFileNames[11] = {
     "item_m2/map03.tim", // Mansion B1
     "item_m2/map04.tim", // Courtyard
     "item_m2/map05.tim", // Underground
-    "item_m2/map06.tim", // Laboratory B1
-    "item_m2/map07.tim", // Laboratory B2
-    "item_m2/map08.tim", // Laboratory B3
-    "item_m2/map09.tim", // Laboratory B4
-    "item_m2/map0a.tim", // Guardhouse 1F
-    "item_m2/map0b.tim"  // Guardhouse B1
+    // The file numbers are NOT in area order: the original's table runs
+    // map01..05, map0a, map0b, map06..09 (read back from 0x004d3104..).
+    "item_m2/map0a.tim", // area 5  Guardhouse 1F
+    "item_m2/map0b.tim", // area 6  Guardhouse B1
+    "item_m2/map06.tim", // area 7  Laboratory B1
+    "item_m2/map07.tim", // area 8  Laboratory B2
+    "item_m2/map08.tim", // area 9  Laboratory B3
+    "item_m2/map09.tim"  // area 10 Laboratory B4
 };
 
 // Map background image (0x004d349c)
@@ -2771,18 +2775,25 @@ static const unsigned char g_MapAreaLayouts[16] = {
     0, 0, 0, 1, 1, 2, 2, 3, 3, 3, 3, 0, 0, 0, 0, 0
 };
 
-// Area -> area group (0x004d3210)
-static const unsigned char g_MapAreaGroups[16] = {
-    0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 4, 4, 0, 3, 2, 2
+// Area -> area group (0x004d3210), 11 areas + one pad byte. The group is the
+// stage (g_stageId % 5) whose visited-room flags and room count the area uses:
+// Mansion 1F -> 0, Mansion 2F/B1 -> 1, Courtyard/Underground -> 2,
+// Guardhouse -> 3, Laboratory -> 4. An earlier revision transcribed this
+// table, the room counts and the floor offsets one byte early (from
+// 0x004d320f / 0x004d321b / 0x004d321f), which tinted every area past the
+// first with another stage's rooms and broke the floor navigation and label.
+static const unsigned char g_MapAreaGroups[12] = {
+    0, 1, 1, 2, 2, 3, 3, 4, 4, 4, 4, 0
 };
 
-// Per-layout room count (0x004d321c). For layout 1 this is the index of the
-// trailing 0xFF "exit" room, so the last real room resolves through the
-// 0xFF path in map_update_layout_state.
-static const unsigned char g_MapLayoutRoomCount[4] = { 0, 3, 2, 2 };
+// Per-layout floor count (0x004d321c): the number of real entries in each
+// g_MapAreaTable row (0x00487457 reads byte [ecx + 0x4d321c]).
+static const unsigned char g_MapLayoutRoomCount[4] = { 3, 2, 2, 4 };
 
-// Per-layout floor-number offset (0x004d3220)
-static const unsigned char g_MapLayoutOffset[4] = { 4, 4, 4, 4 };
+// Per-layout floor-label offset (0x004d3220; 0x004875be reads
+// byte [eax + 0x4d3220]). The label row is 6 - floor index - offset:
+// layouts 0-2 start at row 2 (B1), the laboratory at row 5 (B4).
+static const unsigned char g_MapLayoutOffset[4] = { 4, 4, 4, 1 };
 
 // --- Map sprite descriptors (original .data) ---
 
@@ -2798,23 +2809,16 @@ static TextureDesc g_MapSprites[8] = {
     { 0x01000000, 73, 32, 80, 64, 0x15, 0x00, 0x48, 0, 0x1fc, 0, 0, 0, 0, 0, 0, 0, 0 },   // 1: marker 1
     { 0x01000000, 49, 32, 40, 64, 0x15, 0x50, 0x48, 0, 0x1fc, 0, 0, 0, 0, 0, 0, 0, 0 },   // 2: marker 2
     { 0x01000000, 121, 32, 28, 64, 0x15, 0xc8, 0x48, 0, 0x1fc, 0, 0, 0, 0, 0, 0, 0, 0 },  // 3: marker 3
-    { 0x01000000, 57, 104, 80, 16, 0x15, 0x78, 0x48, 0, 0x1fc, 0x80, 0x80, 0x80, 0, 0, 0, 0, 0 },  // 4: 0x004d32dc "you are here" dot
-    { 0x01000000, 137, 104, 24, 16, 0x15, 0xe8, 0x60, 0, 0x1fc, 0x80, 0x80, 0x80, 0, 0, 0, 0, 0 }, // 5: 0x004d3300 floor glyph
-    { 0x01000000, 145, 96, 8, 8, 0x15, 0xa0, 0x40, 0, 0x1fc, 0x80, 0x80, 0x80, 0, 0, 0, 0, 0 },   // 6: 0x004d3324 left arrow
-    { 0x01000000, 145, 120, 8, 8, 0x15, 0xb0, 0x40, 0, 0x1fc, 0x80, 0x80, 0x80, 0, 0, 0, 0, 0 }   // 7: 0x004d3348 right arrow
+    { 0x01000000, 57, 104, 80, 16, 0x15, 0x78, 0x48, 0, 0x1fc, 0x80, 0x80, 0x80, 0, 0, 0, 0, 0 },  // 4: 0x004d32dc section name (row = layout)
+    { 0x01000000, 137, 104, 24, 16, 0x15, 0xe8, 0x60, 0, 0x1fc, 0x80, 0x80, 0x80, 0, 0, 0, 0, 0 }, // 5: 0x004d3300 floor label (row = floor)
+    { 0x01000000, 145, 96, 8, 8, 0x15, 0xa0, 0x40, 0, 0x1fc, 0x80, 0x80, 0x80, 0, 0, 0, 0, 0 },   // 6: 0x004d3324 floor-up arrow
+    { 0x01000000, 145, 120, 8, 8, 0x15, 0xb0, 0x40, 0, 0x1fc, 0x80, 0x80, 0x80, 0, 0, 0, 0, 0 }   // 7: 0x004d3348 floor-down arrow
 };
 
 // 0x004d3370 / 0x004d3394 / 0x004d33b8 - zoom sprites (scaleX/Y fix16.12,
 // animated by map_display_animate). The map01..09 TIMs are 128x128 (8bpp
 // width field is in 16-bit words), so the original 0x80/0x50/0x50 widths and
 // 0x50 pivots are correct for the PC textures.
-// zoom0 uses slot 0xd -> page 0x1C, whose CLUT base is 0x1E0 + pageOffset.
-// The display loads pass pageOffset 0x1f -> clut base 0x1ff for the LATER
-// pages, but the first loads land on pages whose CLUT base reads back 0
-// (the map TIMs' CLUT is consumed into the texture itself), so the original
-// desc clut 0x1ff made AddSprite_Ex reject zoom0 (clutIdx 511 out of range)
-// and the map never drew - the [MAP] log showed r=0 for zoom0. The desc is
-// retargeted to the page's actual CLUT base (0) so the map sprite is accepted.
 static TextureDesc g_MapZoomDesc[3] = {
     // clutY is 0x1ff, not 0 - all three records at 0x004d3370 / 0x394 /
     // 0x3b8 (stride 0x24) carry it. display_texture derives the palette as
@@ -2844,7 +2848,7 @@ static TextureDesc g_MapLabelDesc = {
 static unsigned char g_MapDotBlink;
 
 // (0x004885c0) - Is the map area known (visited/cleared)?
-// Area flag mapping: 0,1->0x7c; 3->0x7e; 4->0x7f; 5,6->0x80; 8,9->0x81.
+// Area flag mapping: 0->0x7c; 1->0x7d; 3->0x7e; 4->0x7f; 5,6->0x80; 8,9->0x81.
 // Areas 2, 7, 10 and out-of-range values (the 0xFF "no room" table entries)
 // are never known - the original's out-of-range path reads uninitialized
 // stack and returns 0 in practice.
@@ -3049,30 +3053,9 @@ static void map_tab_update(unsigned char* state)
 // floor-transition arrows and the area highlight
 static void map_display_draw(unsigned char* state)
 {
-    // TEMP DEBUG: report the zoom sprite draw results once
-    static int s_dbgOnce = 1;
-    if (s_dbgOnce) {
-        s_dbgOnce = 0;
-        dbg_printf("[MAP] zoom0 slot0xd r=%d | zoom1 slot0xf r=%d | zoom2 slot0xf r=%d\n",
-            AddSprite_Ex(&g_MapZoomDesc[0], 0x28, 0xd, 1),
-            AddSprite_Ex(&g_MapZoomDesc[1], 0x2a, 0xf, 1),
-            AddSprite_Ex(&g_MapZoomDesc[2], 0x2a, 0xf, 1));
-        for (int s = 0x1B; s <= 0x1F; s++) {
-            dbg_printf("[MAP] page %02X srv=%p w=%d h=%d bpp=%d ox=%d oy=%d depth=%d clut=%d\n",
-                s, g_TexturePageSRV[s], g_TexturePageWidth[s], g_TexturePageHeight[s],
-                g_TexturePageBpp[s], g_TexturePageOriginX[s], g_TexturePageOriginY[s],
-                g_TexturePageId[s], g_TexturePageClutBase[s]);
-        }
-        dbg_printf("[MAP] zoom0: flags=%08X xy=(%d,%d) wh=(%d,%d) texUV=(%d,%d) depth=%d clut=%d\n",
-            g_MapZoomDesc[0].flags, g_MapZoomDesc[0].screenX, g_MapZoomDesc[0].screenY,
-            g_MapZoomDesc[0].width, g_MapZoomDesc[0].height,
-            g_MapZoomDesc[0].texU, g_MapZoomDesc[0].texV, g_MapZoomDesc[0].texturePage,
-            g_MapZoomDesc[0].clutY);
-    } else {
-        AddSprite_Ex(&g_MapZoomDesc[0], 0x28, 0xd, 1);
-        AddSprite_Ex(&g_MapZoomDesc[1], 0x2a, 0xf, 1);
-        AddSprite_Ex(&g_MapZoomDesc[2], 0x2a, 0xf, 1);
-    }
+    AddSprite_Ex(&g_MapZoomDesc[0], 0x28, 0xd, 1);
+    AddSprite_Ex(&g_MapZoomDesc[1], 0x2a, 0xf, 1);
+    AddSprite_Ex(&g_MapZoomDesc[2], 0x2a, 0xf, 1);
 
     // Flashing "you are here" dot: copy the zoom sprite and tint it with the
     // blink phase (the original copies 36 bytes including the padding; the
@@ -3287,7 +3270,7 @@ static void map_display_animate(unsigned char* state)
         if (g_MapZoomDesc[0].scaleY > 1) break;
         for (int i = 0; i < 3; i++) g_MapZoomDesc[i].scaleY = 200;
         state[3] = 9;
-        // fall through
+        break;      // no fall through: the X shrink starts on the next frame
     case 9:
         for (int i = 0; i < 3; i++) {
             g_MapZoomDesc[i].scaleX = (short)(g_MapZoomDesc[i].scaleX / 2);
@@ -3378,7 +3361,12 @@ static void map_display_load_textures(unsigned char* state)
         DAT_00ac98a8[1] = 0x188;
         DAT_00ac98a8[2] = 0x80;
         DAT_00ac98a8[3] = 0x70;
+        // Port-only: keep the PS1 STP split of the map page, so its outline,
+        // door markers and ladder symbols (CLUT entries without bit 15) stay
+        // opaque under the additive draw and only the room fills blend.
+        g_TexturePageSplitStp = 1;
         LoadTexturePage(mapBuf, 0x15, 0x1f, 0xd, 4, 0, 0x88, 0);
+        g_TexturePageSplitStp = 0;
 
         // Reload: the highlight page shows only the current room's marker
         LoadFile(DAT_008e1cb0, mapBuf, 0x20);
@@ -3399,6 +3387,14 @@ static void map_display_load_textures(unsigned char* state)
                 }
                 pEntry += 3;
             }
+            // Port-only: drop the shared entries 1-12 (outline, door markers,
+            // ladder symbols) from the highlight page. The PS1 has no such
+            // page - it rewrites one CLUT entry of the map itself each frame
+            // (the 1x1 rect at (room * 6 + 0x10, 0x1ff) that map_display_animate
+            // still fills in) - and the PC's second layer was drawn at 50%
+            // over an identical image, where these were harmless. Drawn
+            // additively they would brighten every symbol a second time.
+            memset((unsigned char*)g_TimImageBuffer__bitmap + 0x10016, 0, 24);
             // Port safety net only - the original (0x004877ef) trusts the
             // count field. Clamp against the pixel data's real extent.
             int count = *(int*)((unsigned char*)g_TimImageBuffer__bitmap + 0x10214) - 0xc;
@@ -3696,6 +3692,7 @@ static int menu_update_map_animation(void)
     case 8:
         MAP_TIMER = MAP_TIMER - 1;
         if (timer == 0) {
+            MAP_STATE = MAP_STATE + 1;
             MAP_EXIT_FLAG = 1;
             play_sfx(3, 5, 0);
         }
@@ -3708,7 +3705,7 @@ static int menu_update_map_animation(void)
 static void menu_init_map_display(void)
 {
     map_update_objective_highlight();
-    *(unsigned int*)&DAT_00ac9890[0] = 0;
+    MAP_STATE = 0;      // byte store only (0x0048888c: mov [0xac9890], al)
     if (MAP_MODE != 1) {
         MAP_LAYOUT = g_MapAreaLayouts[6];   // DAT_004d3206: layout 2 (lab map)
         MAP_GROUP = 5;

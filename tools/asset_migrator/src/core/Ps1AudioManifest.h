@@ -122,11 +122,12 @@ inline constexpr Ps1SfxEntry kPs1Sfx[] = {
     {"CHRIS08", "SOUND", "CHAR03", 7, 4480},  // same sample
     {"CHRIS08", "SOUND", "CHAR04", 7, 4480},  // same sample
     {"CHRIS08", "SOUND", "CHAR05", 7, 4480},  // same sample
-    {"CHRIS09", "SOUND", "CHAR00", 10, 784},  // prog 0 tone 10, 6188 Hz; wave 0.014 env 0.976
-    {"CHRIS09", "SOUND", "CHAR02", 10, 784},  // same sample
-    {"CHRIS09", "SOUND", "CHAR03", 10, 784},  // same sample
-    {"CHRIS09", "SOUND", "CHAR04", 10, 784},  // same sample
-    {"CHRIS09", "SOUND", "CHAR05", 10, 784},  // same sample
+    {"CHRIS09", "SOUND", "CHAR00", 9, 432},  // prog 0 tone 9, 3797 Hz; wave 0.675 env 0.935
+    {"CHRIS09", "SOUND", "CHAR01", 9, 432},  // same sample
+    {"CHRIS09", "SOUND", "CHAR02", 9, 432},  // same sample
+    {"CHRIS09", "SOUND", "CHAR03", 9, 432},  // same sample
+    {"CHRIS09", "SOUND", "CHAR04", 9, 432},  // same sample
+    {"CHRIS09", "SOUND", "CHAR05", 9, 432},  // same sample
     {"CHRIS10", "SOUND", "CHAR00", 8, 3760},  // prog 0 tone 8, 11681 Hz; wave 0.817 env 0.913
     {"CHRIS10", "SOUND", "CHAR01", 8, 3760},  // same sample
     {"CHRIS10", "SOUND", "CHAR02", 8, 3760},  // same sample

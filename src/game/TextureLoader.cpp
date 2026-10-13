@@ -810,6 +810,29 @@ void LoadTexturePage(void* imageBuffer, short texId, short pageOffset, int slotI
                     g_TexturePageSRV[slotIndex] = MARNI_NULL_HANDLE;
                 }
                 MarniCreateTexture(w, h, 32, rgba, &g_TexturePageSRV[slotIndex]);
+                // Port-only PS1 STP split (see g_TexturePageOpaqueSRV): a
+                // second texture with only the texels whose CLUT entry has
+                // bit 15 clear, which a PS1 blend mode leaves opaque.
+                if (g_TexturePageOpaqueSRV[slotIndex] != MARNI_NULL_HANDLE) {
+                    Marni_DX()->DestroyTexture(g_TexturePageOpaqueSRV[slotIndex]);
+                    g_TexturePageOpaqueSRV[slotIndex] = MARNI_NULL_HANDLE;
+                }
+                g_TexturePageOpaqueBase[slotIndex] = MARNI_NULL_HANDLE;
+                if (g_TexturePageSplitStp != 0) {
+                    BYTE* src = (BYTE*)psxTex.m_pPixelData;
+                    for (int i = 0; i < w * h; i++) {
+                        int idx;
+                        if (bpp == 4) {
+                            BYTE pair = src[(i / w) * (w / 2) + (i % w) / 2];
+                            idx = ((i % w) & 1) ? (pair >> 4) : (pair & 0xF);
+                        } else {
+                            idx = src[i];
+                        }
+                        rgba[i] = ((clut[idx] & 0x8000) == 0) ? clutRGBA[idx] : 0;
+                    }
+                    MarniCreateTexture(w, h, 32, rgba, &g_TexturePageOpaqueSRV[slotIndex]);
+                    g_TexturePageOpaqueBase[slotIndex] = g_TexturePageSRV[slotIndex];
+                }
                 g_TexturePageWidth[slotIndex] = w;
                 g_TexturePageHeight[slotIndex] = h;
                 g_TexturePageBpp[slotIndex] = bpp;
@@ -898,6 +921,11 @@ void LoadTexturePage(void* imageBuffer, short texId, short pageOffset, int slotI
                     g_TexturePageSRV[slotIndex] = MARNI_NULL_HANDLE;
                 }
                 MarniCreateTexture(w, h, 32, rgba, &g_TexturePageSRV[slotIndex]);
+                if (g_TexturePageOpaqueSRV[slotIndex] != MARNI_NULL_HANDLE) {
+                    Marni_DX()->DestroyTexture(g_TexturePageOpaqueSRV[slotIndex]);
+                    g_TexturePageOpaqueSRV[slotIndex] = MARNI_NULL_HANDLE;
+                }
+                g_TexturePageOpaqueBase[slotIndex] = MARNI_NULL_HANDLE;
                 g_TexturePageWidth[slotIndex] = w;
                 g_TexturePageHeight[slotIndex] = h;
                 g_TexturePageBpp[slotIndex] = 16;

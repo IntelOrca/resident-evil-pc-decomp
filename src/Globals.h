@@ -187,6 +187,15 @@ extern short         g_TexturePageOriginY[256];   // VRAM Y origin (scanlines)
 extern short         g_TexturePageId[256];        // tpage code assigned to each slot;
                                                   // what TextureDesc::texturePage is matched against
 extern short         g_TexturePageClutBase[256];  // base clutY (= pageOffset + 0x1E0)
+// Port-only: the PS1 per-texel semi-transparency split of a page. A sprite
+// drawn with a PS1 blend mode only blends the texels whose CLUT entry carries
+// the STP bit; the others are opaque. The PC build has no such rule (see
+// LoadTexturePage), so for the pages that ask for it LoadTexturePage keeps a
+// second texture holding just the non-STP texels, and the additive sprite
+// draw lays it over its own result (SPRITE_FLAG_ADDITIVE, SpriteRenderer.h).
+extern MarniHandle   g_TexturePageOpaqueSRV[256];   // non-STP texels, or null
+extern MarniHandle   g_TexturePageOpaqueBase[256];  // the g_TexturePageSRV it was cut from
+extern int           g_TexturePageSplitStp;         // set around a LoadTexturePage call
 extern int           g_texturePageMode;
 extern int           g_texturePageHandle;
 extern void*         g_texturePageSrcDesc;   // port-only: last create_texture_page source, for diagnostics

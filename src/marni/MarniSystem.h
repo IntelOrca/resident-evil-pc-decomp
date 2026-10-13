@@ -134,6 +134,10 @@ void  MarniDrawLine(float x0, float y0, float x1, float y1,
 void  MarniDrawSprite(float x, float y, float w, float h,
                       float u0, float v0, float u1, float v1,
                       DWORD color, MarniHandle tex);
+// Same quad, added to the framebuffer (ONE / ONE) - the PS1's ABR 1.
+void  MarniDrawSpriteAdd(float x, float y, float w, float h,
+                         float u0, float v0, float u1, float v1,
+                         DWORD color, MarniHandle tex);
 
 // Draw perspective-correct textured triangles. verts: triCount*3 vertices,
 // each 10 floats { x, y (screen px, Y-down), z (NDC [0,1], used when
