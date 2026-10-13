@@ -182,6 +182,11 @@ BOOL plat_video_init(void);
 // prologue's Chris-only beat); 0 plays through to the end.
 BOOL plat_video_open_and_play(const char* path, int playToMs);
 
+// Length of the movie at `path` in milliseconds, read without playing it;
+// 0 when it cannot be determined. The prologue cut is chosen from it (the
+// censored releases' prologue is ~16 s shorter).
+int plat_video_probe_duration_ms(const char* path);
+
 // Resume the already-open movie from fromMs through to the end.
 void plat_video_play_from(int fromMs);
 
