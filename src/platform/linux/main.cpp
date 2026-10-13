@@ -227,8 +227,16 @@ int main(int argc, char** argv)
                 running = 0;
                 break;
             case SDL_WINDOWEVENT:
-                if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) g_bWindowFocused = TRUE;
-                else if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST) g_bWindowFocused = FALSE;
+                // 0x004411e2 (WM_ACTIVATE): the focus flag, and the sounds
+                // paused with the game.
+                if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+                    g_bWindowFocused = TRUE;
+                    ResumePausedSounds();
+                }
+                else if (e.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+                    g_bWindowFocused = FALSE;
+                    PauseSounds();
+                }
                 else if (e.window.event == SDL_WINDOWEVENT_CLOSE) running = 0;
                 else if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
                     // A fullscreen switch lands asynchronously on some window
