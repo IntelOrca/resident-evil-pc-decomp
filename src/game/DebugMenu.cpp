@@ -1294,7 +1294,17 @@ static DebugQuickSlotInfo s_dbgQuickSlotInfo[8];
 // allowed through the save list.
 static int DebugQuickSlotLoadBlocked(const DebugQuickSlotInfo* info)
 {
-    if (g_bDcMode || !info->hasData) {
+    if (!info->hasData) {
+        return 0;
+    }
+    const int saturnSave = (info->dcGameMode & SAVE_MODE_SATURN_FLAG) != 0;
+    if (g_bSaturnMode && !saturn_mode_is_borrowed()) {
+        return !saturnSave;
+    }
+    if (saturnSave) {
+        return 1;
+    }
+    if (g_bDcMode) {
         return 0;
     }
     return (info->dcGameMode & 3) != DC_DIFFICULTY_STANDARD;

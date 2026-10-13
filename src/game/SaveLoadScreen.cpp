@@ -504,6 +504,9 @@ void EnsureDirectoryExists(const char* path)
 // ============================================================================
 static unsigned char DcSaveRowColour(unsigned int dcGameMode)
 {
+    if ((dcGameMode & SAVE_MODE_SATURN_FLAG) != 0) {
+        return SAVE_ROW_COLOUR_BLUE;    // a Sega Saturn save
+    }
     if (!g_bDcMode) {
         return 0;                       // the USA build's only colour
     }
@@ -525,7 +528,19 @@ static unsigned char DcSaveRowColour(unsigned int dcGameMode)
 // ============================================================================
 static int SaveSlotLoadBlocked(const SaveSlotInfo* slot)
 {
-    if (g_bDcMode || !slot->hasData) {
+    if (!slot->hasData) {
+        return 0;
+    }
+    // A Saturn save only loads in Saturn mode, and Saturn mode only loads
+    // Saturn saves (OG / DC saves are refused).
+    const int saturnSave = (slot->dcGameMode & SAVE_MODE_SATURN_FLAG) != 0;
+    if (g_bSaturnMode && !saturn_mode_is_borrowed()) {
+        return !saturnSave;
+    }
+    if (saturnSave) {
+        return 1;
+    }
+    if (g_bDcMode) {
         return 0;
     }
     return (slot->dcGameMode & 3) != DC_DIFFICULTY_STANDARD;
@@ -1137,6 +1152,11 @@ void LoadSaveGameState(int mode, int flags, int useInkRibbon, int sfxBank, int c
             // zeroed first so the block tail the port does not model
             // (0x43D..0x800) stays deterministic instead of stack garbage.
             memset(fileBuffer, 0, SAVE_FILE_SIZE);
+            // Port: mark a Saturn-mode save in the mode byte so the other modes
+            // refuse it. A Battle Game run borrowed from OG/DC keeps its own mode.
+            if (g_bSaturnMode && !saturn_mode_is_borrowed()) {
+                g_DcGameMode |= SAVE_MODE_SATURN_FLAG;
+            }
             memcpy(fileBuffer + 0x000, g_BioCardData, sizeof(BioCardLayout));
             memcpy(fileBuffer + OFFSET_PAD_REMAP, g_padRemapSubTable3,
                    sizeof(g_padRemapSubTable3));

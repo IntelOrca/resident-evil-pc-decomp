@@ -508,6 +508,11 @@ extern bool          g_bSaturnBattleGame;       // [Game] BattleGame
 #define DC_DIFFICULTY_TRAINING       1           // more starting health
 #define DC_DIFFICULTY_ADVANCED       2           // Arrange mode (STAGE8-E)
 #define DC_DIFFICULTY_ADVANCED_HOLD  3           // Same arrange mode, but with double ammo (selected by holding right)
+// Port-only: bit 2 of the card's mode byte (+0x233) marks a save made in Sega Saturn
+// mode. The DC difficulty lives in bits 0-1 and is always read masked with 3.
+#define SAVE_MODE_SATURN_FLAG        0x04
+// Port-only font tint (CLUT row 5, see AddTintSprite): the Saturn save rows.
+#define SAVE_ROW_COLOUR_BLUE         5
 #define MSF2_DC_ADVANCED_HOLD        0x00010000u // bit 16 - ADVANCED* (double ammo)
 #define MSF2_DC_ADVANCED             0x00020000u // bit 17 - ADVANCED
 #define MSF2_DC_TRAINING             0x00040000u // bit 18 - TRAINING

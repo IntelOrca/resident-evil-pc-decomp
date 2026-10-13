@@ -134,6 +134,7 @@ int AddTintSprite(TextureDesc* texture, unsigned short brightness)
     case 1:  r = 0; g = 255; b = 0; break;       // green
     case 2:  r = 255; g = 0; b = 0; break;       // red
     case 3:  r = 204; g = 204; b = 204; break;   // gray (0.8)
+    case 5:  r = 64; g = 128; b = 255; break;    // blue (port-only: Saturn save rows)
     default: r = 255; g = 255; b = 0; break;     // yellow
     }
 
