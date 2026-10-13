@@ -310,6 +310,21 @@ def score(pcm, rate, ref, ref_rate):
     return wave_ncc(x, ref), env_corr(envelope(pcm, rate), envelope(ref, ref_rate)), ratio
 
 
+def score_head(pcm, rate, ref, ref_rate):
+    """Waveform NCC of the START of a PS1 render against a PC file that is a
+    trimmed copy of it, or 0.0 when the render is not over twice as long.
+
+    The PC cut some samples short: ft_concB is 0.15 s of a 0.40 s PS1 sample
+    (ft_concA's VAG a tone higher). score() gives such a pair nothing - its
+    length gate is there to keep unrelated sounds apart - so the name stayed
+    with the PC file, and a tree holding only the PS1 import had no running
+    footstep on concrete (rooms 500-503: PlayEntitySnd(1) is the run's)."""
+    n = int(len(ref) * rate / ref_rate)
+    if n < 1 or len(pcm) <= 2 * n:
+        return 0.0
+    return wave_ncc(resample(pcm[:n], rate, ref_rate), ref)
+
+
 def accepted(w, e, ratio, exact):
     """`exact`: the PS1 slot is the one the PC table names. The PC rows are
     not always slot-exact (room 116 has gatan/sw_trap at 23/24, the PS1 bank
@@ -613,6 +628,12 @@ def resolve_sfx(disc, log):
             found.append((ident, key, slot))
             w, e, ratio = score(rendered[ident], play_rate(t), ref, ref_rate)
             exact = (key, slot) in named
+            # A trimmed PC copy: only the table's own slot may claim it, and
+            # only on waveform - the envelope of a cut says nothing.
+            if exact and ratio > 2.0:
+                w = score_head(rendered[ident], play_rate(t), ref, ref_rate)
+                if w >= 0.8:
+                    ratio = 1.0
             cand = (max(w, e), w, e, key, slot, t, exact, ident)
             if best_any is None or cand[0] > best_any[0]:
                 best_any = cand
@@ -813,7 +834,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('image', help='raw PS1 disc image (.cue/.bin/.img)')
     ap.add_argument('--write', action='store_true', help='write ' + os.path.relpath(OUT_H, REPO))
+    ap.add_argument('--pc-sound', help='the PC Sound folder (default: assets/USA/Sound; '
+                    'a tree the PS1 audio was imported into no longer holds the .WAVs to score against)')
+    ap.add_argument('--pc-voice', help='the PC Voice folder (default: assets/USA/Voice)')
     args = ap.parse_args()
+    global PC_SOUND, PC_VOICE
+    PC_SOUND = args.pc_sound or PC_SOUND
+    PC_VOICE = args.pc_voice or PC_VOICE
     disc = Disc(args.image)
     log = print
     log('image: %s (%s)' % (args.image, 'raw' if disc.raw else '2048-byte'))
