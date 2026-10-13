@@ -1868,7 +1868,10 @@ char           g_pakStringBuf[512] = {};
 // 0xA4-byte record carved from the RDT VB region by room_set (count = RDT
 // omodel_slot_count) and filled by cmd_omodel_set; walked by
 // update_room_objects / check_climb_object and targetable from SCD scripts.
-void*          g_omodel_table[8] = {};
+// 14 slots: the original has no other symbol between 0x00d226b0 and
+// 0x00d226e8, and the water gate room (ROOM301x) declares 9 omodel slots - with
+// 8 the ninth pointer landed on whatever the linker placed next.
+void*          g_omodel_table[14] = {};
 
 // 0x00d21360 - Item model record table. One 0xA4-byte record per RDT item_models
 // pair (count = RDT item_count), carved from the VB region by room_set and filled
