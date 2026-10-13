@@ -141,6 +141,15 @@ DWORD ReadPadBoth(void)
 {
 	DWORD tmp;
 
+	// oracle hook: with any --test-* flag armed the harness owns all input and
+	// the live pad reads idle, exactly like the headless port it is compared
+	// against. Without this a stale DirectInput keyboard mask (unfocused
+	// window / remote session) becomes a phantom held button and
+	// StartAttractDemo ends an attract reel on its first frame.
+	if (TestHooks_LivePadDisabled()) {
+		return 0;
+	}
+
 	if (g_pMasterInputState.frameFlag != 0) {
 		g_PadBtnWord = JoyToPSX(g_pMasterInputState.keyboardPrev, 0);
 	}

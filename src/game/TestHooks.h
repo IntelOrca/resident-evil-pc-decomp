@@ -77,6 +77,12 @@ int TestHooks_NoLimit(void);
 // outside the window.
 unsigned int TestHooks_PadOverride(void);
 
+// TRUE when any --test-* flag is armed: the oracle harness runs without a
+// human, so the live pad must read idle (see TestHooks.cpp). ReadPadBoth
+// returns 0 while this is set, which keeps a stale DirectInput keyboard mask
+// from ending an attract reel through StartAttractDemo's held-button check.
+int TestHooks_LivePadDisabled(void);
+
 // Called once per completed gameplay tick from the bottom of game_loop's inner
 // frame loop. Arms the trace on the first tick of the new-game room 106 and
 // marks a line as pending for TestHooks_OnFrameCompleted.
