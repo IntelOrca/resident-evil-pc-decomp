@@ -165,6 +165,17 @@ BOOL plat_file_write(const char* path, const void* data, size_t size)
     return (ok && written == (DWORD)size) ? TRUE : FALSE;
 }
 
+unsigned int plat_file_mtime(const char* path)
+{
+    WIN32_FILE_ATTRIBUTE_DATA info;
+    if (!GetFileAttributesExA(path, GetFileExInfoStandard, &info)) return 0;
+    unsigned long long ft = ((unsigned long long)info.ftLastWriteTime.dwHighDateTime << 32)
+                          | info.ftLastWriteTime.dwLowDateTime;
+    const unsigned long long epoch = 116444736000000000ULL;   // 1601 -> 1970, 100 ns units
+    if (ft < epoch) return 0;
+    return (unsigned int)((ft - epoch) / 10000000ULL);
+}
+
 size_t plat_readable_bytes(const void* p)
 {
     MEMORY_BASIC_INFORMATION mbi;

@@ -220,6 +220,14 @@ BOOL plat_file_write(const char* path, const void* data, size_t size)
     return (written == size) ? TRUE : FALSE;
 }
 
+unsigned int plat_file_mtime(const char* path)
+{
+    char norm[1024];
+    struct stat st;
+    if (stat(plat_normalize_path(path, norm, sizeof(norm)), &st) != 0) return 0;
+    return (unsigned int)st.st_mtime;
+}
+
 void* plat_file_read_all(const char* path, size_t* outSize)
 {
     char norm[1024];

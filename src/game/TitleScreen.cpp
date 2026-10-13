@@ -33,7 +33,7 @@ void set_display_resolution(int w, int h, int mode)
 int check_save_files_exist(void)
 {
     char path[260];
-    for (int i = 1; i <= 8; i++) {
+    for (int i = 1; i <= 16; i++) {      // port: 16 save slots
         sprintf(path, "%ssavedat%d.dat", GetSaveRoot(), i);
         FILE* f = fopen(path, "rb");
         if (f != NULL) {

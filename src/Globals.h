@@ -511,6 +511,16 @@ extern bool          g_bSaturnBattleGame;       // [Game] BattleGame
 // Port-only: bit 2 of the card's mode byte (+0x233) marks a save made in Sega Saturn
 // mode. The DC difficulty lives in bits 0-1 and is always read masked with 3.
 #define SAVE_MODE_SATURN_FLAG        0x04
+// Port-only: the save file carries the time() it was written at, 4 bytes little endian,
+// right after the original 0xA82-byte layout.
+#define SAVE_OFFSET_TIMESTAMP        0xA82
+unsigned int SaveTimestampNow(void);   // SaveLoadScreen.cpp
+// Port-only helpers shared with the debug quick save / load lists (SaveLoadScreen.cpp):
+// the time a save file was written (its own stamp, else the file's date; 0 = unknown),
+// and the "Saturn Mode - DD/MM/YYYY HH:mm" line the save screen shows for a slot.
+unsigned int SaveFileTimestamp(const char* path, const char* buffer, int size);
+void SaveModeTimeText(unsigned int dcGameMode, unsigned int timestamp, char* out, size_t outSize);
+#define SAVE_SLOT_TOTAL              16     // save slots (the original has 8)
 // Port-only font tint (CLUT row 5, see AddTintSprite): the Saturn save rows.
 #define SAVE_ROW_COLOUR_BLUE         5
 #define MSF2_DC_ADVANCED_HOLD        0x00010000u // bit 16 - ADVANCED* (double ammo)

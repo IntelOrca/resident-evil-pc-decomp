@@ -1285,8 +1285,11 @@ struct DebugQuickSlotInfo {
     int roomId;         // file 0x201
     int savesCount;     // file 0x228
     int dcGameMode;     // file 0x233 (g_DcGameMode); port-only, see below
+    unsigned int timestamp;   // when the save was written (SaveFileTimestamp)
 };
-static DebugQuickSlotInfo s_dbgQuickSlotInfo[8];
+static DebugQuickSlotInfo s_dbgQuickSlotInfo[SAVE_SLOT_TOTAL];
+static int           s_dbgQuickTop = 0;         // slot lists: first slot shown
+#define DBG_QUICK_ROWS 8
 
 // mirror of SaveLoadScreen.cpp's SaveSlotLoadBlocked. In OG mode a
 // DC TRAINING/ADVANCED/ADVANCED* save cannot be loaded (its rules exist only in
@@ -1312,8 +1315,8 @@ static int DebugQuickSlotLoadBlocked(const DebugQuickSlotInfo* info)
 
 static void DebugQuick_ScanSlots(void)
 {
-    char buffer[0xA90];                 // full save file (0xA82) + margin
-    for (int i = 0; i < 8; i++) {
+    char buffer[0xA90];                 // full save file (0xA86) + margin
+    for (int i = 0; i < SAVE_SLOT_TOTAL; i++) {
         DebugQuickSlotInfo* info = &s_dbgQuickSlotInfo[i];
         info->hasData = 0;
         sprintf(g_saveFileName, "%ssavedat%d.dat", GetSaveRoot(), i + 1);
@@ -1325,6 +1328,7 @@ static void DebugQuick_ScanSlots(void)
             info->roomId      = (unsigned char)buffer[0x201];
             info->savesCount  = (unsigned char)buffer[0x228];
             info->dcGameMode  = (unsigned char)buffer[0x233];
+            info->timestamp   = SaveFileTimestamp(g_saveFileName, buffer, size);
         }
     }
 }
@@ -1333,11 +1337,17 @@ static void DebugQuick_DrawSlotList(void)
 {
     DebugMenu_DrawBox();
 
-    DebugMenu_PrintCentered(76, (s_dbgQuickMode == 0) ? "- QUICK SAVE -" : "- QUICK LOAD -",
-                            DBGCOL_TEXT);
+    char title[40];
+    sprintf(title, "%s %02d/%02d", (s_dbgQuickMode == 0) ? "- QUICK SAVE -" : "- QUICK LOAD -",
+            s_dbgQuickSlot + 1, SAVE_SLOT_TOTAL);
+    DebugMenu_PrintCentered(76, title, DBGCOL_TEXT);
 
-    short y = 92;
-    for (int i = 0; i < 8; i++, y += 11) {
+    // Scroll the window so the selected slot stays in view.
+    if (s_dbgQuickSlot < s_dbgQuickTop) s_dbgQuickTop = s_dbgQuickSlot;
+    if (s_dbgQuickSlot > s_dbgQuickTop + DBG_QUICK_ROWS - 1) s_dbgQuickTop = s_dbgQuickSlot - (DBG_QUICK_ROWS - 1);
+
+    short y = 90;
+    for (int i = s_dbgQuickTop; i < s_dbgQuickTop + DBG_QUICK_ROWS; i++, y += 10) {
         char line[40];
         unsigned char color = DBGCOL_TEXT;
         if (s_dbgQuickSlotInfo[i].hasData) {
@@ -1345,16 +1355,15 @@ static void DebugQuick_DrawSlotList(void)
             const char* chName = ((s_dbgQuickSlotInfo[i].characterId & 3) == CHAR_JILL)
                                      ? "JILL" : "CHRIS";
             // Room id in the room change screen's hex form: (stage+1)*0x100+room
-            sprintf(line, "%d %-5s ROOM %X", i + 1, chName,
+            sprintf(line, "%2d %-5s ROOM %X", i + 1, chName,
                     (s_dbgQuickSlotInfo[i].stageId + 1) * 0x100 + s_dbgQuickSlotInfo[i].roomId);
             // a DC TRAINING/ADVANCED save is dimmed, and in OG mode
             // its load is refused (overwriting it from the save list is fine).
             if (DebugQuickSlotLoadBlocked(&s_dbgQuickSlotInfo[i])) {
                 color = DBGCOL_DIM;
-                strcat(line, " [DC]");
             }
         } else {
-            sprintf(line, "%d EMPTY", i + 1);
+            sprintf(line, "%2d EMPTY", i + 1);
             color = DBGCOL_DIM;
         }
 
@@ -1364,6 +1373,22 @@ static void DebugQuick_DrawSlotList(void)
         }
         sprintf(PRINT_TEXT_BUFFER, "%s", line);
         PrintText8x8((short)(64 + 16), y, color, 0);
+    }
+
+    // Mode and date of the selected save, as on the save screen.
+    if (s_dbgQuickSlotInfo[s_dbgQuickSlot].hasData) {
+        char info[64];
+        SaveModeTimeText((unsigned int)s_dbgQuickSlotInfo[s_dbgQuickSlot].dcGameMode,
+                         s_dbgQuickSlotInfo[s_dbgQuickSlot].timestamp, info, sizeof(info));
+        // "DC/Advanced Mode - <date>" is 35 cells and overflows the 34-cell box:
+        // drop the word "Mode" here.
+        char* word = strstr(info, " Mode");
+        if (word != NULL) {
+            memmove(word, word + 5, strlen(word + 5) + 1);
+        }
+        DebugMenu_PrintCentered(173, info,
+                                DebugQuickSlotLoadBlocked(&s_dbgQuickSlotInfo[s_dbgQuickSlot])
+                                    ? DBGCOL_DIM : DBGCOL_TEXT);
     }
 
     if (s_dbgQuickMode == 0) {
@@ -1771,10 +1796,10 @@ int debug_menu_overlay(void)
         s_dbgQuickMode = s_dbgContext - 5;
 
         if (newKeys & DBGKEY_UP) {
-            s_dbgQuickSlot = (s_dbgQuickSlot + 7) % 8;
+            s_dbgQuickSlot = (s_dbgQuickSlot + SAVE_SLOT_TOTAL - 1) % SAVE_SLOT_TOTAL;
         }
         if (newKeys & DBGKEY_DOWN) {
-            s_dbgQuickSlot = (s_dbgQuickSlot + 1) % 8;
+            s_dbgQuickSlot = (s_dbgQuickSlot + 1) % SAVE_SLOT_TOTAL;
         }
 
         if (newKeys & DBGKEY_CONFIRM) {

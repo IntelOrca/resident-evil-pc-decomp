@@ -80,6 +80,10 @@ size_t plat_readable_bytes(const void* p);
 // PSXTexture::LoadFromFile.
 void* plat_file_read_all(const char* path, size_t* outSize);
 
+// Last-modified time of a file as seconds since 1970-01-01 UTC, or 0 when the
+// file cannot be examined. Used to date saves that carry no timestamp.
+unsigned int plat_file_mtime(const char* path);
+
 // ---------------------------------------------------------------------------
 // Diagnostics
 // ---------------------------------------------------------------------------
