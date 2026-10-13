@@ -16,6 +16,8 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
+
+extern void CenterScreenOrigin(void);
 #include <cstring>
 
 // ---------------------------------------------------------------------------
@@ -30,6 +32,7 @@ static int   s_roomId           = 0;   // room byte
 static int   s_demoArmed        = 0;
 static int   s_demoId           = 0;   // pdemoN.dat index, 0..3
 static int   s_demoMaxOverride  = 0;   // --test-demo-max, 0 = file header
+static int   s_anyTestArmed     = 0;   // any --test-* flag: no live input
 
 static char  s_tracePath[1024]  = {};
 static char  s_captureDir[1024] = {};
@@ -135,6 +138,13 @@ static void TestHooks_Parse(const char* cmdLine)
             s_noLimit = 1;
         }
     }
+
+    // Any recognised test flag means the oracle harness owns this run and
+    // there is no human at the keyboard (see TestHooks_LivePadDisabled).
+    s_anyTestArmed = s_newGameArmed || s_roomArmed || s_demoArmed ||
+                     s_tracePath[0] != '\0' || s_captureDir[0] != '\0' ||
+                     s_captureEvery > 0 || s_exitAfter > 0 ||
+                     s_pressTick >= 0 || s_noLimit;
 }
 
 // ---------------------------------------------------------------------------
@@ -212,6 +222,23 @@ void TestHooks_Init(const char* cmdLine)
 int TestHooks_NewGameArmed(void)     { return s_newGameArmed; }
 int TestHooks_NewGameCharacter(void) { return s_newGameCharacter; }
 int TestHooks_NoLimit(void)          { return s_noLimit; }
+
+// ---------------------------------------------------------------------------
+// TestHooks_LivePadDisabled - TRUE whenever any --test-* flag is armed.
+//
+// The oracle harness always runs without a human: the scripted input comes
+// from the trace scenario (--test-press bits, the attract reel's pdemoN
+// stream), never from the keyboard or a pad. The live pad path must
+// therefore read idle. It does not by itself: on a machine where the
+// DirectInput keyboard state is not being refreshed for this process
+// (unfocused window, remote session) keyboardCurr keeps a stale non-zero
+// mask, JoyToPSX turns it into a phantom pad word, and StartAttractDemo's
+// "any button held" check ends an attract reel on its first frame - the reel
+// then cycles rooms every few ticks instead of playing. The port being
+// compared has no live input at all, so the reference mirrors it by
+// returning an idle pad from ReadPadBoth for the whole test run.
+// ---------------------------------------------------------------------------
+int TestHooks_LivePadDisabled(void)  { return s_anyTestArmed; }
 
 // ---------------------------------------------------------------------------
 // TestHooks_PadOverride - the --test-press window, in traced ticks. The
@@ -349,6 +376,12 @@ void TestHooks_StartAttractDemo(void)
     nullsub_0047eb80();
     TestHooks_SilenceSound();
 
+    // The attract demo is normally entered from the title screen, whose menu
+    // path leaves the screen origin at the menu offset; the room draw expects
+    // the game origin. Center it here like the game start does so the room
+    // background quad lands full-screen in oracle captures.
+    CenterScreenOrigin();
+
     // The attract path's own PRNG normalisation is game_loop's srand(0) once
     // MSF2_ATTRACT_DEMO is set (GameLoop.cpp:61-64) - the PC attract reels were
     // recorded against that seed. Pinning it here as well makes anything
@@ -470,6 +503,24 @@ void TestHooks_OnGameplayTick(void)
         } else {
             return;
         }
+    }
+    // TEMP DIAGNOSTIC: why does the attract watchdog end the reel at tick 0?
+    if (s_demoArmed && s_tick < 60) {
+        fprintf(stderr,
+                "[oracle-debug] t%u cur=%d max=%d pos=(%d,%d) ang=%d beh=%d as=%d anim=%d frame=%d "
+                "j5=(%d,%d,%d) j3=(%d,%d,%d) blend=%d\n",
+                s_tick, (int)g_DemoTimerCur, (int)g_DemoTimerMax,
+                g_playerEntity.scaMatrixData.localMatrix.t[0],
+                g_playerEntity.scaMatrixData.localMatrix.t[2],
+                (int)g_playerEntity.directionAngle,
+                (int)g_playerEntity.action_behavior, (int)g_playerEntity.action_state,
+                (int)g_playerEntity.animationId, (int)g_playerEntity.animation_frame_id,
+                (int)g_playerEntity.jointsStructs[5].rotation.x,
+                (int)g_playerEntity.jointsStructs[5].rotation.y,
+                (int)g_playerEntity.jointsStructs[5].rotation.z,
+                (int)g_playerEntity.jointsStructs[3].rotation.x,
+                (int)g_playerEntity.jointsStructs[3].rotation.y,
+                (int)g_playerEntity.jointsStructs[3].rotation.z);
     }
     s_pendingTick = 1;
 }
