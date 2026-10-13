@@ -927,8 +927,13 @@ void room_event_item_pickup(void)
         (g_selectedItemId == ITEM_INK_RIBBONS)) {
         // Stackable: merge into an existing slot of the same item id.
         unsigned char slotCount = (unsigned char)((4 - ((g_playerEntity.id & 3) != 1)) * 2);
+        // Two registers in the original: the capacity stays put for the
+        // "is there a free slot" test below, a copy counts the scan down.
+        // Counting slotCount itself down made that test fail for a stack in
+        // a late slot, so the overflow went whole into a new slot.
+        unsigned char remaining = slotCount;
         unsigned char idx = 0;
-        while (slotCount != 0) {
+        while (remaining != 0) {
             unsigned char* slot = (unsigned char*)g_ItemSlotsPointer + (unsigned int)idx * 2;
             if (slot[0] == itemId) {
                 unsigned short merged = (unsigned short)(slot[1] + (unsigned short)quantity);
@@ -942,7 +947,7 @@ void room_event_item_pickup(void)
                     break;
                 }
             }
-            slotCount--;
+            remaining--;
             idx++;
         }
     }

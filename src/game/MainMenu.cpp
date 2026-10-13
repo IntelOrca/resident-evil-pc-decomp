@@ -6489,7 +6489,11 @@ int FUN_0044e1b0(void)
             if (g_TotalHeldItems < g_totalInventorySlots) {
                 uVar7 = 0xc0;
             } else {
-                if (((ITEM_EXPLOSIVE_ROUNDS < g_bItemMenuSelectedItemId) && (g_bItemMenuSelectedItemId < ITEM_EMPTY_BOTTLE)) || (g_bItemMenuSelectedItemId == ITEM_INK_RIBBONS)) {
+                // 0x0044e477: CMP id,0x0b / JC ; CMP id,0x13 / JC - every
+                // ammunition id (0x0b-0x12), the same range room_event_item_pickup
+                // merges. The second set_message_display below is a no-op once
+                // 0xc0 is up (g_menu_choice_id & 0x80), as in the original.
+                if (((ITEM_ROCKET_LAUNCHER < g_bItemMenuSelectedItemId) && (g_bItemMenuSelectedItemId < ITEM_EMPTY_BOTTLE)) || (g_bItemMenuSelectedItemId == ITEM_INK_RIBBONS)) {
                     // Same doubling the pickup itself will apply, so the
                     // "you got it" / "no room" choice matches what lands in the
                     // inventory (PS1 FUN_8002e1a4 repeats IncludeCurrentItem's
