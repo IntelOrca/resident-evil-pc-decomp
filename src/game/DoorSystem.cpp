@@ -1242,7 +1242,6 @@ static void DoorAnimTask(void)
 // Called BEFORE the task spawn so the animation starts with data ready.
 void door_system_load_data(void)
 {
-    crashlog_mark("door: door_system_load_data");
     DoorLoadData();
 }
 
@@ -1251,7 +1250,6 @@ void door_system_load_data(void)
 // room_transition_load waits for bit 0x4000000 to clear.
 void door_system_start_animation(void)
 {
-    crashlog_mark("door: door_system_start_animation");
     Task_execute(1, (void*)DoorAnimTask);
 }
 
