@@ -58,6 +58,11 @@ static void PlatLoadTestKeys(void)
 
 int plat_key_state(int vk)
 {
+    // VK 0 is an unbound binding slot, never a key. GetAsyncKeyState(0) is
+    // not guaranteed to be 0 on every system (here it read as held, which put
+    // 0x100 on the raw pad word and turned the inventory key into the
+    // START+0x100 options chord).
+    if (vk == 0) return 0;
     if (s_testKeyCount < 0) {
         s_testT0 = timeGetTime();
         PlatLoadTestKeys();
