@@ -41,6 +41,21 @@ static int   s_exitAfter        = 0;
 static int   s_pressTick        = -1;
 static int   s_pressHold        = 0;
 
+// --test-input: a scripted per-tick pad playback (the UI/interaction oracle).
+// The file lists `<tick> <button>...` entries; the named buttons become a raw
+// PSX pad word held from that traced tick until the next entry (no buttons =
+// release). With this armed the trace is emitted every frame, including the
+// frames a pause menu owns (game_loop is suspended then, so --test-press alone
+// produces no line). See TestHooks.h.
+typedef struct ScriptedInput {
+    unsigned int tick;
+    unsigned int word;
+} ScriptedInput;
+static ScriptedInput s_input[8192];
+static int            s_inputCount  = 0;
+static int            s_inputArmed  = 0;
+static int            s_uiFrameTrace = 0;   // trace/capture every frame
+
 // Trace runtime state
 static FILE*          s_traceFile = NULL;
 static int            s_traceArmed = 0;   // room 106 live, transition done
@@ -56,6 +71,109 @@ static DWORD          s_capturedW = 0, s_capturedH = 0;
 static unsigned int   s_capturedHash = 0;
 static unsigned int   s_lastHash = 0;     // last presented frame's hash
 static int            s_capturedThisTick = 0;
+
+// ---------------------------------------------------------------------------
+// Scripted input: button name -> raw PSX pad word bit. These are the bits the
+// game reads before the g_padRemapTable pass (the same values the pad binding
+// defaults use): raw byte 1 is the d-pad (up 0x10, right 0x20, down 0x40,
+// left 0x80), and the face buttons are confirm/Cross 0x0080 and cancel/Circle
+// 0x0040 (which also runs). START/inventory is 0x0800; aim is 0x0008.
+// ---------------------------------------------------------------------------
+static unsigned int TestHooks_Button(const char* name)
+{
+    if (strcmp(name, "up") == 0)      return 0x1000;
+    if (strcmp(name, "down") == 0)    return 0x4000;
+    if (strcmp(name, "left") == 0)    return 0x8000;
+    if (strcmp(name, "right") == 0)   return 0x2000;
+    if (strcmp(name, "confirm") == 0 || strcmp(name, "cross") == 0 ||
+        strcmp(name, "action") == 0)  return 0x0080;
+    if (strcmp(name, "cancel") == 0 || strcmp(name, "circle") == 0 ||
+        strcmp(name, "run") == 0)     return 0x0040;
+    if (strcmp(name, "aim") == 0 || strcmp(name, "square") == 0) return 0x0008;
+    if (strcmp(name, "start") == 0 || strcmp(name, "inventory") == 0) return 0x0800;
+    if (strcmp(name, "options") == 0 || strcmp(name, "select") == 0) return 0x0900;
+    fprintf(stderr, "[oracle] --test-input: unknown button `%s`\n", name);
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Load a --test-input script: one entry per line, `<tick> <button>...`, `#`
+// comments and blank lines ignored. A later entry replaces the held word from
+// its tick on (so writing a tick with no buttons releases everything).
+// ---------------------------------------------------------------------------
+static void TestHooks_LoadInput(const char* path)
+{
+    FILE* f = fopen(path, "r");
+    if (f == NULL) {
+        fprintf(stderr, "[oracle] --test-input: cannot open %s\n", path);
+        return;
+    }
+
+    char line[1024];
+    while (fgets(line, sizeof(line), f) != NULL) {
+        char* hash = strchr(line, '#');
+        if (hash != NULL) *hash = '\0';
+
+        // Manual whitespace tokenising (portable; no strtok_r on MSVC).
+        char* cursor = line;
+        char* tok = cursor;
+        while (*tok == ' ' || *tok == '\t') tok++;
+        if (*tok == '\0' || *tok == '\r' || *tok == '\n') continue;
+        if (!isdigit((unsigned char)tok[0])) continue;
+
+        unsigned int tick = (unsigned int)strtoul(tok, NULL, 10);
+        while (*cursor != '\0' && *cursor != ' ' && *cursor != '\t' && *cursor != '\r' && *cursor != '\n') cursor++;
+
+        unsigned int word = 0;
+        while (*cursor != '\0') {
+            while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n') cursor++;
+            if (*cursor == '\0') break;
+            char* start = cursor;
+            while (*cursor != '\0' && *cursor != ' ' && *cursor != '\t' && *cursor != '\r' && *cursor != '\n') cursor++;
+            char saved = *cursor;
+            *cursor = '\0';
+            word |= TestHooks_Button(start);
+            *cursor = saved;
+        }
+
+        if (s_inputCount >= (int)(sizeof(s_input) / sizeof(s_input[0]))) {
+            fprintf(stderr, "[oracle] --test-input: too many entries\n");
+            break;
+        }
+        s_input[s_inputCount].tick = tick;
+        s_input[s_inputCount].word = word;
+        s_inputCount++;
+    }
+    fclose(f);
+
+    // Keep the table sorted so the per-frame scan can stop early.
+    for (int i = 1; i < s_inputCount; i++) {
+        ScriptedInput key = s_input[i];
+        int j = i - 1;
+        while (j >= 0 && s_input[j].tick > key.tick) {
+            s_input[j + 1] = s_input[j];
+            j--;
+        }
+        s_input[j + 1] = key;
+    }
+
+    s_inputArmed = 1;
+    s_uiFrameTrace = 1;
+    fprintf(stderr, "[oracle] --test-input %s (%d entries, per-frame trace)\n",
+            path, s_inputCount);
+}
+
+// The scripted held word for the given traced tick (0 when no entry has
+// landed yet).
+static unsigned int TestHooks_ScriptedWord(unsigned int tick)
+{
+    unsigned int word = 0;
+    for (int i = 0; i < s_inputCount; i++) {
+        if (s_input[i].tick > tick) break;
+        word = s_input[i].word;
+    }
+    return word;
+}
 
 // ---------------------------------------------------------------------------
 // Command line parsing. WinMain's lpCmdLine has no program name. Tokens are
@@ -134,6 +252,8 @@ static void TestHooks_Parse(const char* cmdLine)
         } else if (strcmp(t, "--test-press") == 0 && i + 2 < tokenCount) {
             s_pressTick = atoi(tokens[++i]);
             s_pressHold = atoi(tokens[++i]);
+        } else if (strcmp(t, "--test-input") == 0 && i + 1 < tokenCount) {
+            TestHooks_LoadInput(tokens[++i]);
         } else if (strcmp(t, "--test-nolimit") == 0) {
             s_noLimit = 1;
         }
@@ -144,7 +264,7 @@ static void TestHooks_Parse(const char* cmdLine)
     s_anyTestArmed = s_newGameArmed || s_roomArmed || s_demoArmed ||
                      s_tracePath[0] != '\0' || s_captureDir[0] != '\0' ||
                      s_captureEvery > 0 || s_exitAfter > 0 ||
-                     s_pressTick >= 0 || s_noLimit;
+                     s_pressTick >= 0 || s_inputArmed || s_noLimit;
 }
 
 // ---------------------------------------------------------------------------
@@ -250,12 +370,17 @@ int TestHooks_LivePadDisabled(void)  { return s_anyTestArmed; }
 // ---------------------------------------------------------------------------
 unsigned int TestHooks_PadOverride(void)
 {
-    if (s_pressTick < 0 || !s_traceArmed) return 0;
+    if (!s_traceArmed) return 0;
     int tick = (int)s_tick;
-    if (tick >= s_pressTick && tick < s_pressTick + s_pressHold) {
-        return 0x0040u;
+    unsigned int word = 0;
+    if (s_inputArmed) {
+        // --test-input scripted playback, keyed by the traced tick.
+        word |= TestHooks_ScriptedWord((unsigned int)tick);
     }
-    return 0;
+    if (s_pressTick >= 0 && tick >= s_pressTick && tick < s_pressTick + s_pressHold) {
+        word |= 0x0040u;
+    }
+    return word;
 }
 
 // ---------------------------------------------------------------------------
@@ -533,6 +658,29 @@ void TestHooks_OnGameplayTick(void)
                 (int)g_playerEntity.jointsStructs[3].rotation.y,
                 (int)g_playerEntity.jointsStructs[3].rotation.z);
     }
+    s_pendingTick = 1;
+}
+
+// ---------------------------------------------------------------------------
+// TestHooks_OnFrameEnd - per-frame trace/capture when a --test-input script is
+// armed. A pause menu owns the frame while its task runs, so game_loop's hook
+// never fires then; this marks every frame past the arm point instead, so the
+// inventory/map/file screens are traced and captured exactly like gameplay.
+// Called from main_loop just before FrameRateGovernor (so the pending line is
+// set before the pre-present capture). No-op without --test-input.
+// ---------------------------------------------------------------------------
+void TestHooks_OnFrameEnd(void)
+{
+    if (s_traceFile == NULL || !s_uiFrameTrace) return;
+
+    // The arm point is still owned by TestHooks_OnGameplayTick: it fires on the
+    // first real gameplay tick, so the trace origin is identical with and
+    // without a menu. This hook only keeps the per-frame emission going once
+    // armed, so menu frames (which never reach the gameplay hook) are traced
+    // and captured too. Arming here would race the room boot and record
+    // pre-game_loop frames.
+    if (!s_traceArmed) return;
+
     s_pendingTick = 1;
 }
 

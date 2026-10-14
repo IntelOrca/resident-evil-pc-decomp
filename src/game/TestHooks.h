@@ -20,6 +20,12 @@
 //   --test-capture-every <N>   write a captured frame every N traced ticks
 //   --test-capture-dir <path>  directory for the f%05d.rgba captures
 //   --test-exit-after <N>      exit(0) after N traced ticks
+//   --test-input <path>        scripted per-tick pad playback (one
+//                              `<tick> <button>...` entry per line; buttons:
+//                              up/down/left/right, confirm/action, cancel,
+//                              aim, start/inventory, options/select). Arms a
+//                              per-frame trace so pause-menu frames are
+//                              captured too, not just gameplay ticks.
 //   --test-nolimit             disable the 16/33 ms frame limiter
 //
 // None of this exists in the original binary; it is test scaffolding for the
@@ -87,6 +93,12 @@ int TestHooks_LivePadDisabled(void);
 // frame loop. Arms the trace on the first tick of the new-game room 106 and
 // marks a line as pending for TestHooks_OnFrameCompleted.
 void TestHooks_OnGameplayTick(void);
+
+// Called once per frame from main_loop just before FrameRateGovernor. With a
+// --test-input script armed, arms the trace and marks every frame past the arm
+// point - including the frames a pause menu owns, when game_loop is suspended
+// and TestHooks_OnGameplayTick never fires. No-op without --test-input.
+void TestHooks_OnFrameEnd(void);
 
 // Called from FrameRateGovernor immediately before MarniPresent, while the
 // back buffer still holds this tick's rendered frame (after Present the
