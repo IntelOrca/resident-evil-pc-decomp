@@ -174,6 +174,10 @@ foreach(cand "/usr/lib/i386-linux-gnu" "/usr/lib32")
         set(RE1_M32_LIBDIR "${cand}")
     endif()
 endforeach()
+# Out-of-tree 32-bit sysroot (e.g. build/sysroot32, see tests/oracle_headless.sh).
+if(DEFINED ENV{RE1_M32_LIBDIR})
+    set(RE1_M32_LIBDIR "$ENV{RE1_M32_LIBDIR}")
+endif()
 if(RE1_M32_LIBDIR STREQUAL "")
     message(FATAL_ERROR
         "No 32-bit library directory found (looked for /usr/lib/i386-linux-gnu "
@@ -204,6 +208,14 @@ target_compile_options(residentevil PRIVATE -m32 -w
 # -L ahead of every library: the linker takes the first -L that matches, so the
 # 32-bit directory wins over a 64-bit object of the same name.
 target_link_options(residentevil PRIVATE -m32 -rdynamic -L${RE1_M32_LIBDIR})
+# Point the ELF interpreter at the 32-bit loader the build links against, so
+# the binary runs directly against an out-of-tree sysroot (no system-wide
+# /lib/ld-linux.so.2 needed). Invoking the loader explicitly instead would make
+# /proc/self/exe name the loader, and the game would resolve config.ini and
+# its assets from the loader's directory.
+if(EXISTS "${RE1_M32_LIBDIR}/ld-linux.so.2")
+    target_link_options(residentevil PRIVATE "-Wl,--dynamic-linker,${RE1_M32_LIBDIR}/ld-linux.so.2")
+endif()
 
 # Resolve one link library out of the 32-bit directory. Neither `-lSDL2` nor a
 # hardcoded soname is portable: the lib32-* packages do not always ship the
@@ -232,6 +244,10 @@ endfunction()
 # Debian's i386 dev packages put them in the multiarch include directory, which
 # is not on the default search path.
 set(RE1_INCLUDE_HINTS /usr/include /usr/include/i386-linux-gnu)
+# Out-of-tree 32-bit sysroot headers (e.g. build/sysroot32/usr/include).
+if(DEFINED ENV{RE1_M32_INCLUDE})
+    list(INSERT RE1_INCLUDE_HINTS 0 "$ENV{RE1_M32_INCLUDE}")
+endif()
 find_path(RE1_SDL2_INCLUDE_DIR SDL.h
     PATH_SUFFIXES SDL2 HINTS ${RE1_INCLUDE_HINTS})
 if(NOT RE1_SDL2_INCLUDE_DIR)
