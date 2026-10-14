@@ -2,6 +2,7 @@
 // Original function: main_loop at 0x00428eb0 (Ghidra)
 // Adapted from Ghidra decompilation
 #include "Globals.h"
+#include "TestHooks.h"
 #include "../system/AssetPath.h"
 #include "saturn/SaturnBattle.h"
 #include "../marni/MarniSystem.h"   // MarniHd_PumpDeferred (port-only)
@@ -502,6 +503,10 @@ _post:
     }
 
     // 0x0042a0d0: Frame timing + present governor
+    // oracle hook: with a --test-input script armed this marks the frame for a
+    // trace line (including pause-menu frames game_loop's hook never sees),
+    // before FrameRateGovernor's pre-present capture. No-op otherwise.
+    TestHooks_OnFrameEnd();
     FrameRateGovernor();
     g_gameTimerSnapshot = Game_timer;
     DAT_004d46d4 = Game_timer;
