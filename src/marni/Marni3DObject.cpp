@@ -925,9 +925,10 @@ int CMarniViewport2::GetVertex(int index, DWORD* outData)
     }
 
     DWORD* vtx = (DWORD*)((BYTE*)m_pVertexBuffer + index * 0x2C);
-    for (int i = 0; i < 11; i++) {
-        outData[i] = vtx[i];
-    }
+    // memcpy, not a DWORD loop: the caller's source is a PSXObjVtx of floats
+    // and GCC 16 -O3 miscompiles the loop's float-vs-DWORD aliasing, leaving
+    // the vertex buffer zeroed (every entity mesh disappears).
+    memcpy(outData, vtx, 11 * sizeof(DWORD));
     return 1;
 }
 
@@ -948,9 +949,10 @@ int CMarniViewport2::SetVertex(int index, DWORD* data)
     }
 
     DWORD* vtx = (DWORD*)((BYTE*)m_pVertexBuffer + index * 0x2C);
-    for (int i = 0; i < 11; i++) {
-        vtx[i] = data[i];
-    }
+    // memcpy, not a DWORD loop: the caller's source is a PSXObjVtx of floats
+    // and GCC 16 -O3 miscompiles the loop's float-vs-DWORD aliasing, leaving
+    // the vertex buffer zeroed (every entity mesh disappears).
+    memcpy(vtx, data, 11 * sizeof(DWORD));
     return 1;
 }
 
