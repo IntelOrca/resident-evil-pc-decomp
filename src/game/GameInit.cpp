@@ -235,6 +235,17 @@ void load_global_assets(void)
         return;
     }
 
+    // oracle hook: test-only direct save load (--test-load). Replaces the
+    // chain to the logos screen with the title's load-game flow: the bio card
+    // at the named path is restored and armed for InitializeGame's continue
+    // branch. --test-load never sets s_newGameArmed, so the order against
+    // --test-newgame only matters if both are passed (newgame then wins the
+    // room override). No-op without the flag.
+    if (TestHooks_LoadArmed()) {
+        TestHooks_StartLoad();
+        return;
+    }
+
     // oracle hook: test-only direct new game (--test-newgame). Replaces the
     // chain to the logos screen with the character-select case 6 transition
     // and DisplayIntroAndStartGame minus the FMV. No-op without the flag.

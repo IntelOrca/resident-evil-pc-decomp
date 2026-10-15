@@ -34,6 +34,14 @@ static int   s_demoId           = 0;   // pdemoN.dat index, 0..3
 static int   s_demoMaxOverride  = 0;   // --test-demo-max, 0 = file header
 static int   s_anyTestArmed     = 0;   // any --test-* flag: no live input
 
+// --test-load: boot from a save block at an explicit path (the arklay `--load`
+// anchor). The stage/room the arming test compares against come from the
+// restored card, not from the command line.
+static char  s_loadPath[1024]  = {};
+static int   s_loadArmed       = 0;
+static int   s_loadStage       = 0;    // 0-based g_stageId, captured at restore
+static int   s_loadRoom        = 0;    // room byte, captured at restore
+
 static char  s_tracePath[1024]  = {};
 static char  s_captureDir[1024] = {};
 static int   s_captureEvery     = 0;
@@ -241,6 +249,9 @@ static void TestHooks_Parse(const char* cmdLine)
             }
         } else if (strcmp(t, "--test-demo-max") == 0 && i + 1 < tokenCount) {
             s_demoMaxOverride = atoi(tokens[++i]);
+        } else if (strcmp(t, "--test-load") == 0 && i + 1 < tokenCount) {
+            strncpy(s_loadPath, tokens[++i], sizeof(s_loadPath) - 1);
+            s_loadArmed = 1;
         } else if (strcmp(t, "--test-trace") == 0 && i + 1 < tokenCount) {
             strncpy(s_tracePath, tokens[++i], sizeof(s_tracePath) - 1);
         } else if (strcmp(t, "--test-capture-every") == 0 && i + 1 < tokenCount) {
@@ -262,6 +273,7 @@ static void TestHooks_Parse(const char* cmdLine)
     // Any recognised test flag means the oracle harness owns this run and
     // there is no human at the keyboard (see TestHooks_LivePadDisabled).
     s_anyTestArmed = s_newGameArmed || s_roomArmed || s_demoArmed ||
+                     s_loadArmed ||
                      s_tracePath[0] != '\0' || s_captureDir[0] != '\0' ||
                      s_captureEvery > 0 || s_exitAfter > 0 ||
                      s_pressTick >= 0 || s_inputArmed || s_noLimit;
@@ -316,6 +328,9 @@ void TestHooks_Init(const char* cmdLine)
     if (s_demoArmed) {
         fprintf(stderr, "[oracle] --test-demo id=%d%s\n", s_demoId,
                 s_demoMaxOverride > 0 ? " (max override armed)" : "");
+    }
+    if (s_loadArmed) {
+        fprintf(stderr, "[oracle] --test-load %s\n", s_loadPath);
     }
     if (s_noLimit) {
         fprintf(stderr, "[oracle] --test-nolimit\n");
@@ -448,6 +463,64 @@ void TestHooks_StartNewGame(void)
     setSomeColor(128, 128, 128);
     // re1_srand(1): normalise the platform PRNG before the room runs, the
     // same seed both engines start a new game from (trace-v1.md "Trace origin").
+    re1_srand(1);
+    nullsub_0047eb80();
+    Task_sleep(1);
+    Task_chain((void*)game_start);
+}
+
+// ---------------------------------------------------------------------------
+// --test-load: boot straight from a save block at an explicit path.
+// ---------------------------------------------------------------------------
+int TestHooks_LoadArmed(void)
+{
+    return s_loadArmed;
+}
+
+// ---------------------------------------------------------------------------
+// TestHooks_StartLoad
+//
+// Reproduces the title screen's load-game flow (TitleScreen.cpp cases 2/3,
+// lines 768-776) minus the title and load-picker states: DebugQuick_LoadFile
+// restores the bio card, sets MSF_CONTINUE_GAME and adopts the saved
+// character, exactly like a row confirm in the load screen's state 4; this
+// hook then rebuilds the state the title leaves (the card's timer snapshot,
+// standalone screen mode) and chains game_start, whose InitializeGame
+// continue branch rebuilds the saved stage/room. Tick 0 is the first gameplay
+// tick in the restored room, identical in meaning to --test-room's.
+//
+// The FMV request, sounds and screen colour are handled like
+// TestHooks_StartNewGame: the skipped title/logos states' side effects are
+// reproduced explicitly.
+// ---------------------------------------------------------------------------
+void TestHooks_StartLoad(void)
+{
+    if (!DebugQuick_LoadFile(s_loadPath)) {
+        fprintf(stderr, "[oracle] --test-load: refused '%s'\n", s_loadPath);
+        return;
+    }
+
+    // The trace arming compares the live room against the saved identity; the
+    // card's stage byte is already 0-based (the value g_stageId carries).
+    s_loadStage = (int)(unsigned char)g_stageId;
+    s_loadRoom  = (int)(unsigned char)g_roomId;
+    fprintf(stderr, "[oracle] --test-load stage=%d room=0x%02X char=%d\n",
+            s_loadStage + 1, s_loadRoom, (int)g_SelectedCharactedId);
+
+    // The title's tail before game_start (TitleScreen.cpp 772-775).
+    g_loadSaveStateFlag = 0;
+    Game_timer = g_gameTimerSnapshot;
+    g_main_state_flags = (g_main_state_flags & ~MSF_SCREEN_MODE_MASK) | MSF_SCREEN_STANDALONE;
+
+    sounds_reset();
+    TestHooks_SilenceSound();
+    // The background quad is modulated by the global sprite colour; the
+    // skipped logos screen normally calls setSomeColor(128,128,128).
+    extern void setSomeColor(int r, int g, int b);
+    setSomeColor(128, 128, 128);
+    // The save block does not carry g_randState. Both engines normalise the
+    // platform stream to seed 1 on the continue boot (arklay's fresh state
+    // starts at 1); trace-v1.md "Trace origin".
     re1_srand(1);
     nullsub_0047eb80();
     Task_sleep(1);
@@ -629,6 +702,10 @@ void TestHooks_OnGameplayTick(void)
             // g_CurrentAttractModeId cycle, not the loaded header).
             stageMatches = (g_stageId == g_AttractDemoData.stageId);
             roomMatches = (g_roomId == g_AttractDemoData.roomId);
+        } else if (s_loadArmed) {
+            // The identity captured when --test-load restored the card.
+            stageMatches = (g_stageId == (unsigned char)s_loadStage);
+            roomMatches = (g_roomId == (unsigned char)s_loadRoom);
         } else {
             stageMatches = (g_stageId == (unsigned char)STAGE_MANSION_1F);
             roomMatches = (g_roomId == (unsigned char)ROOM_MAIN_HALL);

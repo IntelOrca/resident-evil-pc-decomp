@@ -16,6 +16,9 @@
 //                              reel's recorded room
 //   --test-demo-max <ticks>    override the reel's recorded length (the
 //                              pdemo header's demoTimerMax) after the load
+//   --test-load <path>         boot from the save block at <path> (a
+//                              `savedatN.dat` image); the trace arms on the
+//                              room and character the save records
 //   --test-trace <path>        write the per-tick oracle trace to <path>
 //   --test-capture-every <N>   write a captured frame every N traced ticks
 //   --test-capture-dir <path>  directory for the f%05d.rgba captures
@@ -61,6 +64,17 @@ void TestHooks_StartAttractDemo(void);
 // logs the loaded reel's identity and applies --test-demo-max to
 // g_DemoTimerMax. No-op unless --test-demo was passed.
 void TestHooks_OnDemoDataLoaded(void);
+
+// TRUE when --test-load was passed.
+int TestHooks_LoadArmed(void);
+
+// Restores the save block --test-load named (DebugQuick_LoadFile), captures
+// its stage/room for the trace arming, rebuilds the state the title's load
+// flow leaves and chains game_start, whose InitializeGame continue branch
+// rebuilds the saved stage. Call from task context (the tail of
+// load_global_assets). A refused save (missing/short/DC-in-OG) logs and does
+// not start the game.
+void TestHooks_StartLoad(void);
 
 // TRUE when --test-room was passed.
 int TestHooks_RoomArmed(void);
