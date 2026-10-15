@@ -875,7 +875,16 @@ extern void*         g_RoomActionTail;              // 0x00d91bc0
 extern void*         g_pRoomActionEntry;               // 0x00d226a4
 
 // Room model record tables (populated by room_set from the RDT VB region)
-extern void*         g_omodel_table[8];      // 0x00d226b0 - room-object (omodel) records
+//
+// g_omodel_table holds one pointer per RDT omodel_slot_count, and room_set /
+// update_room_objects / check_climb_object all walk it with that raw count.
+// 14 slots: the original's table occupies 0x00d226b0..0x00d226e8 (the next
+// documented global, the dead constant, starts exactly there). 9 slots is the
+// shipped maximum - the Courtyard water-gate rooms 3010/3011 - so an 8-slot
+// table overran into whatever the linker placed after it (in the port that was
+// g_pakStringBuf, which the LZW decoder trashed, segfaulting the first
+// update_room_objects pass - upstream issue "Entering Water Gate crashes").
+extern void*         g_omodel_table[14];     // 0x00d226b0 - room-object (omodel) records
 extern void*         g_item_model_table[8]; // 0x00d21360 - item model records (room pick-up 3D models)
 
 // Enemy model loading state (used by room_set and cmd_omodel_set)
