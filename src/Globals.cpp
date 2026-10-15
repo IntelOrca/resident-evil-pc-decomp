@@ -1863,7 +1863,11 @@ char           g_pakStringBuf[512] = {};
 // 0xA4-byte record carved from the RDT VB region by room_set (count = RDT
 // omodel_slot_count) and filled by cmd_omodel_set; walked by
 // update_room_objects / check_climb_object and targetable from SCD scripts.
-void*          g_omodel_table[8] = {};
+// Sized for the original's 0x00d226b0..0x00d226e8 span. The count is a raw
+// RDT byte, and the shipped maximum is 9 (rooms 3010/3011, the water gate);
+// the previous 8-slot table let room 301 write a carved-record pointer over
+// the next global and update_room_objects dereferenced the garbage.
+void*          g_omodel_table[14] = {};
 
 // 0x00d21360 - Item model record table. One 0xA4-byte record per RDT item_models
 // pair (count = RDT item_count), carved from the VB region by room_set and filled

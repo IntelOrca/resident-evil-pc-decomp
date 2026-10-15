@@ -218,6 +218,11 @@ searchable room models (containers, lids, desks, ...) and fills
 **`omodel_slot_count`**, item pair count is **`item_count`** — each table
 feeds its own 0xA4-byte record pool (`g_omodel_table` / `g_item_model_table`).
 
+The count is a raw byte and the engine's walks are count-bounded, so the record
+tables must be sized for the largest shipped count: 9 omodel slots, in the
+courtyard water-gate rooms 3010/3011 (14 for `g_omodel_table`, matching the
+original's 0x00d226b0..0x00d226e8 span; 8 is enough for `item_count`).
+
 That RDT+0x54 is the *item* table (the original `nItem` / item-model block) is
 confirmed twice over: its consumer is `cmd_item_model_set`, and the icon
 section at RDT+0x78 holds exactly `item_count` inventory icons.
