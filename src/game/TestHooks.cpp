@@ -20,6 +20,10 @@
 extern void CenterScreenOrigin(void);
 #include <cstring>
 
+// --test-ending chains the ending task straight from load_global_assets
+// (GameStart.cpp declares the same entry point).
+extern void ending_state(void);
+
 // ---------------------------------------------------------------------------
 // Parsed flags (file-static; the game is single-threaded, single instance)
 // ---------------------------------------------------------------------------
@@ -41,6 +45,14 @@ static char  s_loadPath[1024]  = {};
 static int   s_loadArmed       = 0;
 static int   s_loadStage       = 0;    // 0-based g_stageId, captured at restore
 static int   s_loadRoom        = 0;    // room byte, captured at restore
+
+// --test-ending: boot straight into the ending sequence. The endings are
+// unreachable in the port's gameplay (game_loop never returns "completed"), so
+// the RESULT screen and the rocket epilogue can only be captured through this
+// hook; EndingScreen.cpp skips the ending films while it is armed.
+static int   s_endingArmed     = 0;
+static int   s_endingId        = 6;    // 1..7, the ending to show
+static int   s_endingCharacter = 0;    // 0 Chris, 1 Jill
 
 static char  s_tracePath[1024]  = {};
 static char  s_captureDir[1024] = {};
@@ -252,6 +264,16 @@ static void TestHooks_Parse(const char* cmdLine)
         } else if (strcmp(t, "--test-load") == 0 && i + 1 < tokenCount) {
             strncpy(s_loadPath, tokens[++i], sizeof(s_loadPath) - 1);
             s_loadArmed = 1;
+        } else if (strcmp(t, "--test-ending") == 0 && i + 1 < tokenCount) {
+            int id = atoi(tokens[++i]);
+            if (id < 1 || id > 7) {
+                fprintf(stderr, "[oracle] --test-ending expects an ending id 1..7\n");
+            } else {
+                s_endingArmed = 1;
+                s_endingId = id;
+            }
+        } else if (strcmp(t, "--test-ending-char") == 0 && i + 1 < tokenCount) {
+            s_endingCharacter = atoi(tokens[++i]) & 1;
         } else if (strcmp(t, "--test-trace") == 0 && i + 1 < tokenCount) {
             strncpy(s_tracePath, tokens[++i], sizeof(s_tracePath) - 1);
         } else if (strcmp(t, "--test-capture-every") == 0 && i + 1 < tokenCount) {
@@ -273,7 +295,7 @@ static void TestHooks_Parse(const char* cmdLine)
     // Any recognised test flag means the oracle harness owns this run and
     // there is no human at the keyboard (see TestHooks_LivePadDisabled).
     s_anyTestArmed = s_newGameArmed || s_roomArmed || s_demoArmed ||
-                     s_loadArmed ||
+                     s_loadArmed || s_endingArmed ||
                      s_tracePath[0] != '\0' || s_captureDir[0] != '\0' ||
                      s_captureEvery > 0 || s_exitAfter > 0 ||
                      s_pressTick >= 0 || s_inputArmed || s_noLimit;
@@ -331,6 +353,10 @@ void TestHooks_Init(const char* cmdLine)
     }
     if (s_loadArmed) {
         fprintf(stderr, "[oracle] --test-load %s\n", s_loadPath);
+    }
+    if (s_endingArmed) {
+        fprintf(stderr, "[oracle] --test-ending id=%d char=%d\n",
+                s_endingId, s_endingCharacter & 1);
     }
     if (s_noLimit) {
         fprintf(stderr, "[oracle] --test-nolimit\n");
@@ -475,6 +501,61 @@ void TestHooks_StartNewGame(void)
 int TestHooks_LoadArmed(void)
 {
     return s_loadArmed;
+}
+
+// ---------------------------------------------------------------------------
+// --test-ending: boot straight into the ending sequence.
+// ---------------------------------------------------------------------------
+int TestHooks_EndingArmed(void)
+{
+    return s_endingArmed;
+}
+
+int TestHooks_EndingId(void)
+{
+    return s_endingId;
+}
+
+// ---------------------------------------------------------------------------
+// TestHooks_StartEnding
+//
+// The endings have no gameplay trigger in this port: game_loop never reports a
+// completed game, so ending_state is unreachable and the RESULT screen and the
+// rocket epilogue cannot be captured for the differential oracle at all. This
+// hook chains ending_state directly and fills in the completed run's state that
+// the sequence reads:
+//
+//   g_playerEntity.id / g_SelectedCharactedId - the RESULT screen's backdrop
+//     still (chris02/jill02) and Jill's plate layout shift,
+//   g_gameTimerSnapshot - the clear-time string (0 here: "00:00^00"),
+//   g_SavesCounter - the save-count string (1 is the counter's new-game value,
+//     so it prints 00 and arms the no-save bonus exactly like a run that never
+//     used a typewriter).
+//
+// Everything else the sequence needs (the en05/en07 pages, the i73v.ivm item
+// model, the texture pages and its own RDT) it builds itself. EndingScreen.cpp
+// skips the ending films and the staff roll while the flag is armed.
+// ---------------------------------------------------------------------------
+void TestHooks_StartEnding(void)
+{
+    g_SelectedCharactedId = (unsigned char)(s_endingCharacter & 1);
+    g_playerEntity.id = (unsigned char)((g_playerEntity.id & ~3) | (s_endingCharacter & 1));
+    g_gameTimerSnapshot = 0;
+    g_SavesCounter = 1;
+    g_bGameActive = 2;
+
+    sounds_reset();
+    TestHooks_SilenceSound();
+
+    // The background quad is modulated by the global sprite colour; the states
+    // this boot skips (the logos screen) normally call setSomeColor(128,128,128).
+    extern void setSomeColor(int r, int g, int b);
+    setSomeColor(128, 128, 128);
+
+    fprintf(stderr, "[oracle] --test-ending starting: id=%d char=%d\n",
+            s_endingId, s_endingCharacter & 1);
+    Task_sleep(1);
+    Task_chain((void*)ending_state);
 }
 
 // ---------------------------------------------------------------------------
@@ -748,7 +829,17 @@ void TestHooks_OnGameplayTick(void)
 // ---------------------------------------------------------------------------
 void TestHooks_OnFrameEnd(void)
 {
-    if (s_traceFile == NULL || !s_uiFrameTrace) return;
+    if (s_traceFile == NULL) return;
+
+    // The ending boot has no game_loop tick to arm the trace on, so the first
+    // frame after load_global_assets chains the ending task is tick 0.
+    if (s_endingArmed) {
+        s_traceArmed = 1;
+        s_pendingTick = 1;
+        return;
+    }
+
+    if (!s_uiFrameTrace) return;
 
     // The arm point is still owned by TestHooks_OnGameplayTick: it fires on the
     // first real gameplay tick, so the trace origin is identical with and
