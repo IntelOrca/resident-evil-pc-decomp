@@ -19,6 +19,12 @@
 //   --test-load <path>         boot from the save block at <path> (a
 //                              `savedatN.dat` image); the trace arms on the
 //                              room and character the save records
+//   --test-ending <1..7>       boot straight into the ending sequence with
+//                              this ending id, skipping the ending films and
+//                              the staff roll; the trace arms on the first
+//                              frame (the ending has no gameplay ticks)
+//   --test-ending-char <0|1>   character the --test-ending run shows (0 Chris,
+//                              1 Jill); selects the RESULT screen's backdrop
 //   --test-trace <path>        write the per-tick oracle trace to <path>
 //   --test-capture-every <N>   write a captured frame every N traced ticks
 //   --test-capture-dir <path>  directory for the f%05d.rgba captures
@@ -75,6 +81,19 @@ int TestHooks_LoadArmed(void);
 // load_global_assets). A refused save (missing/short/DC-in-OG) logs and does
 // not start the game.
 void TestHooks_StartLoad(void);
+
+// TRUE when --test-ending was passed.
+int TestHooks_EndingArmed(void);
+
+// The --test-ending ending id (1..7).
+int TestHooks_EndingId(void);
+
+// Boots straight into the ending sequence: sets the completed run's state the
+// ending reads (the character, the clear-time snapshot and the save counter)
+// and chains ending_state. The ending films and the staff roll are skipped
+// while the flag is armed (see EndingScreen.cpp). Call from task context (the
+// tail of load_global_assets).
+void TestHooks_StartEnding(void);
 
 // TRUE when --test-room was passed.
 int TestHooks_RoomArmed(void);
