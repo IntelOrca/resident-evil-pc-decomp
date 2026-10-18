@@ -30,6 +30,7 @@
 #include "BioCard.h"
 #include "PrintText.h"
 #include "../system/AssetPath.h"
+#include "TestHooks.h"
 #include <cstdio>
 #include <cstring>
 
@@ -864,6 +865,12 @@ void ending_state(void)
     s_itemModelDst  = s_itemModelBuffer + 0x10220;
 
     ending_select_id();
+    // oracle hook: --test-ending pins the ending the run shows. No-op without
+    // the flag (the id comes from the survivor flags and the character).
+    if (TestHooks_EndingArmed()) {
+        s_endingId = (unsigned char)TestHooks_EndingId();
+        fprintf(stderr, "[oracle] --test-ending: ending id %d\n", (int)s_endingId);
+    }
 
     g_loadDataDestPointer = g_DataBuffer;
     LoadFile(s_endingTable[s_endingId].background != 0
@@ -915,21 +922,29 @@ void ending_state(void)
     // backend select, default 1); this port routes every FMV through the
     // main_loop 0x40000 path, exactly as logos_state does, so the
     // g_bIsSoftwareRendering == 0 side is the live one here.
+    //
+    // oracle hook: --test-ending skips the two ending films outright - the
+    // oracle harness runs headless, and a requested film would hold the task
+    // until it finished playing. No-op without the flag.
     // ------------------------------------------------------------------
-    if (g_bIsSoftwareRendering == 0) {
-        g_selectedFmvId = 14;
-        g_main_state_flags |= MSF_FMV_REQUEST;
-        Task_sleep(1);
-    } else {
-        QueueVideoPlayback(0xE, 0);
+    if (!TestHooks_EndingArmed()) {
+        if (g_bIsSoftwareRendering == 0) {
+            g_selectedFmvId = 14;
+            g_main_state_flags |= MSF_FMV_REQUEST;
+            Task_sleep(1);
+        } else {
+            QueueVideoPlayback(0xE, 0);
+        }
     }
 
     g_selectedFmvId = (unsigned char)(s_endingId + 14);
-    if (g_bIsSoftwareRendering == 0) {
-        g_main_state_flags |= MSF_FMV_REQUEST;
-        Task_sleep(1);
-    } else {
-        QueueVideoPlayback(g_selectedFmvId, 0);
+    if (!TestHooks_EndingArmed()) {
+        if (g_bIsSoftwareRendering == 0) {
+            g_main_state_flags |= MSF_FMV_REQUEST;
+            Task_sleep(1);
+        } else {
+            QueueVideoPlayback(g_selectedFmvId, 0);
+        }
     }
 
     ending_scene_reset();
@@ -946,52 +961,58 @@ void ending_state(void)
         s_fmvCharId = (unsigned char)(g_playerEntity.id & 3);
     }
 
-    if (s_stepDone == 0) {
-        g_selectedFmvId = 0x1B;
-    } else if (s_stepDone == 1) {
-        if (s_fmvCharId == 0)      g_selectedFmvId = 24;
-        else if (s_fmvCharId == 1) g_selectedFmvId = 25;
-        else                       g_selectedFmvId = 26;
-    } else {
-        g_selectedFmvId = 27;
-    }
-    // DC ending has no cleared-once congratulations-FMV swap (see the backdrop
-    // note above).
-    if (!g_bDcMode &&
-        Flg_ck((int)g_ScenarioFlags, SCENARIO_FLAG_SECOND_PLAYTHROUGH) != 0) {
-        g_selectedFmvId = 26;
-    }
-
-    if (g_bIsSoftwareRendering == 0 && Ps1EndingCredits_IsEnabled()) {
-        // The overlay keys its movie and tables on the player character
-        // (0x800c5125 & 3), not on the rocket-launcher congratulations id.
-        Ps1EndingCredits_Begin(s_endingId, g_playerEntity.id & 3);
-    }
-
-    if (g_bIsSoftwareRendering == 0) {
-        g_main_state_flags |= MSF_FMV_REQUEST;
-        Task_sleep(1);
-    }
-
-    if (s_endingTable[s_endingId].staffRoll == 1) {
-        if (g_bIsSoftwareRendering == 0) {
-            g_main_state_flags =
-                (g_main_state_flags & ~MSF_SCREEN_MODE_MASK) | MSF_SCREEN_STANDALONE;
-            g_spriteAnimR = 0;
-            g_spriteAnimG = 0;
-            g_spriteAnimB = 0;
-            Task_sleep(0x96);
+    // oracle hook: --test-ending skips the congratulations film, the credits
+    // overlay and the staff roll - the RESULT screen does not depend on any of
+    // them, and their film requests would hold the ending task until playback
+    // finished. s_stepDone is rewritten below by the RESULT screen's own build.
+    if (!TestHooks_EndingArmed()) {
+        if (s_stepDone == 0) {
+            g_selectedFmvId = 0x1B;
+        } else if (s_stepDone == 1) {
+            if (s_fmvCharId == 0)      g_selectedFmvId = 24;
+            else if (s_fmvCharId == 1) g_selectedFmvId = 25;
+            else                       g_selectedFmvId = 26;
         } else {
-            QueueVideoPlayback(g_selectedFmvId, 0);
+            g_selectedFmvId = 27;
         }
-        g_selectedFmvId = 22;                 // STAFF ROLL
-        g_main_state_flags |= MSF_FMV_REQUEST;
-        Task_sleep(1);
-    } else if (g_bIsSoftwareRendering != 0) {
-        g_main_state_flags |= MSF_FMV_REQUEST;
-        Task_sleep(1);
+        // DC ending has no cleared-once congratulations-FMV swap (see the
+        // backdrop note above).
+        if (!g_bDcMode &&
+            Flg_ck((int)g_ScenarioFlags, SCENARIO_FLAG_SECOND_PLAYTHROUGH) != 0) {
+            g_selectedFmvId = 26;
+        }
+
+        if (g_bIsSoftwareRendering == 0 && Ps1EndingCredits_IsEnabled()) {
+            // The overlay keys its movie and tables on the player character
+            // (0x800c5125 & 3), not on the rocket-launcher congratulations id.
+            Ps1EndingCredits_Begin(s_endingId, g_playerEntity.id & 3);
+        }
+
+        if (g_bIsSoftwareRendering == 0) {
+            g_main_state_flags |= MSF_FMV_REQUEST;
+            Task_sleep(1);
+        }
+
+        if (s_endingTable[s_endingId].staffRoll == 1) {
+            if (g_bIsSoftwareRendering == 0) {
+                g_main_state_flags =
+                    (g_main_state_flags & ~MSF_SCREEN_MODE_MASK) | MSF_SCREEN_STANDALONE;
+                g_spriteAnimR = 0;
+                g_spriteAnimG = 0;
+                g_spriteAnimB = 0;
+                Task_sleep(0x96);
+            } else {
+                QueueVideoPlayback(g_selectedFmvId, 0);
+            }
+            g_selectedFmvId = 22;                 // STAFF ROLL
+            g_main_state_flags |= MSF_FMV_REQUEST;
+            Task_sleep(1);
+        } else if (g_bIsSoftwareRendering != 0) {
+            g_main_state_flags |= MSF_FMV_REQUEST;
+            Task_sleep(1);
+        }
+        Ps1EndingCredits_End();
     }
-    Ps1EndingCredits_End();
 
     // ------------------------------------------------------------------
     // RESULT screen

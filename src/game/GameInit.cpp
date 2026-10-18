@@ -226,6 +226,15 @@ void load_global_assets(void)
     };
     CreateTexturedQuad(0, 0x2F, rectConfig);
 
+    // oracle hook: test-only direct ending boot (--test-ending). The endings
+    // have no gameplay trigger in this port, so this is the only way the
+    // RESULT screen and the rocket epilogue can be captured. No-op without the
+    // flag.
+    if (TestHooks_EndingArmed()) {
+        TestHooks_StartEnding();
+        return;
+    }
+
     // oracle hook: test-only direct attract demo boot (--test-demo). Replaces
     // the chain to the logos screen with the title's idle-timeout entry, so
     // game_start loads pdemoN.dat. Takes precedence over --test-newgame when
