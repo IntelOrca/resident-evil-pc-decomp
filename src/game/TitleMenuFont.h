@@ -1,9 +1,9 @@
-// SaturnTitle.h - the title menu's text, drawn in the original Resident Evil
+// TitleMenuFont.h - the title menu's text, drawn in the original Resident Evil
 // option typeface.
 //
-// This started as the Sega Saturn mode's title menu (hence the file's place and
-// name) and is now the title menu of every mode. The second title state - the
-// one after PRESS START BUTTON - is
+// This started as the Sega Saturn mode's title menu (saturn/SaturnTitle.*) and
+// is now the title menu of every mode. The second title state - the one after
+// PRESS START BUTTON - is
 //
 //     NEW GAME
 //     LOAD GAME
@@ -28,11 +28,11 @@
 // title: it opens the submenu. The submenu's entries follow, and the first is
 // the Battle Game - the value title_state() acts on. (The Director's Cut has
 // its difficulty cells at 3-6 and numbers these from 8; see TitleScreen.cpp.)
-#define SATURN_TITLE_EXTRA_ITEM     3
-#define SATURN_TITLE_EXTRAS_FIRST   4
+#define TITLE_EXTRA_ITEM     3
+#define TITLE_EXTRAS_FIRST   4
 
 // Loads data\titlefnt.bin once. Returns 1 when the font is usable.
-int saturn_title_font_load(void);
+int title_font_load(void);
 
 // The menu sheet: a 256x256 4bpp TIM in the USA title sheet's grey palette and
 // CLUT row, holding two strips per item - the text centred on the sheet's 256
@@ -43,27 +43,27 @@ int saturn_title_font_load(void);
 //
 // The title draws one strip per menu line, so a menu of any length fits on the
 // screen without a frame per cursor position. Returns the TIM's size, 0 when the
-// font is not loaded or there are more than SATURN_TITLE_STRIP_MAX items.
-#define SATURN_TITLE_STRIP_H      12
-#define SATURN_TITLE_STRIP_PITCH  24
-#define SATURN_TITLE_STRIP_MAX    10
-unsigned int saturn_title_build_strips(unsigned char* out,
+// font is not loaded or there are more than TITLE_FONT_STRIP_MAX items.
+#define TITLE_FONT_STRIP_H      12
+#define TITLE_FONT_STRIP_PITCH  24
+#define TITLE_FONT_STRIP_MAX    10
+unsigned int title_font_build_strips(unsigned char* out,
                                        const char* const* items, int count);
 
-// Loads the sheet saturn_title_build_strips just built as texture `texId` in
+// Loads the sheet title_font_build_strips just built as texture `texId` in
 // `slot` (LoadTexturePage). With HD textures on and a TrueType font in the HD
 // folder (HD/<USA|JPN>/Data/TITLEFNT.TTF; the migrator writes Archivo Black),
 // the upload gets an HD copy of the sheet drawn in it, at a scale fitted to the
 // desktop's height (the 4bpp sheet stays the logical texture); otherwise this
 // is LoadTexturePage alone and the menu is the bitmap font of TITLEFNT.BIN.
-void saturn_title_load_strips(void* tim, short texId, int slot);
+void title_font_load_strips(void* tim, short texId, int slot);
 
-// The release's own title sheets, loaded through saturn_title_load_sheet:
-#define SATURN_TITLE_SHEET_USA_START      0   // data\t_start.tim (a pad is connected)
-#define SATURN_TITLE_SHEET_USA_PRESS      1   // data\t_press.tim
-#define SATURN_TITLE_SHEET_DC_MAIN        2   // the Director's Cut's page A (cells 0-2)
-#define SATURN_TITLE_SHEET_DC_DIFFICULTY  3   // its page B (cells 3-6, the difficulty submenu)
-#define SATURN_TITLE_SHEET_COUNT          4
+// The release's own title sheets, loaded through title_font_load_sheet:
+#define TITLE_FONT_SHEET_USA_START      0   // data\t_start.tim (a pad is connected)
+#define TITLE_FONT_SHEET_USA_PRESS      1   // data\t_press.tim
+#define TITLE_FONT_SHEET_DC_MAIN        2   // the Director's Cut's page A (cells 0-2)
+#define TITLE_FONT_SHEET_DC_DIFFICULTY  3   // its page B (cells 3-6, the difficulty submenu)
+#define TITLE_FONT_SHEET_COUNT          4
 
 // LoadTexturePage(tim, texId, pageOffset, slot, unused, posX, posY, flags) for
 // one of those sheets. With HD textures on, the upload gets an HD picture with
@@ -71,10 +71,10 @@ void saturn_title_load_strips(void* tim, short texId, int slot);
 // STANDARD ... in the title font (HD/<tree>/Data/TITLEFNT.TTF), the copyright
 // lines in the 8x8 HD font (FONTUS.TTF / FONT.TTF; HdText.h). A sheet whose
 // art is not laid out as this file expects keeps its own.
-void saturn_title_load_sheet(int sheet, void* tim, short texId, short pageOffset,
+void title_font_load_sheet(int sheet, void* tim, short texId, short pageOffset,
                              int slot, int unused, short posX, short posY,
                              unsigned int flags);
 
-// Makes the next saturn_title_font_load() look for the file again. The answer
+// Makes the next title_font_load() look for the file again. The answer
 // is cached, and the options menu can change the asset region under it.
-void saturn_title_font_forget(void);
+void title_font_forget(void);

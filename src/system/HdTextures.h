@@ -181,7 +181,7 @@ struct HdRegionScope {
 
 // A picture the game draws at HD size itself, for a texture it also builds at
 // the original size: the title menu's text strips, drawn from the title font's
-// outlines (saturn/SaturnTitle.cpp). Until the matching HdTextures_EndPicture,
+// outlines (TitleMenuFont.cpp). Until the matching HdTextures_EndPicture,
 // an upload whose pixels are exactly `rgba` (width x height RGBA8) gets
 // `hdRgba` (hdWidth x hdHeight RGBA8, same aspect ratio) instead - so a copy
 // of the same pixels (LoadTexturePage's STP twin) gets it too, and anything

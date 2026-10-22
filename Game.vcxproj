@@ -195,7 +195,6 @@
     <ClCompile Include="src\game\saturn\SaturnRoomObjects.cpp" />
     <ClCompile Include="src\game\saturn\SaturnTick.cpp" />
     <ClCompile Include="src\game\saturn\SaturnTickAnim.cpp" />
-    <ClCompile Include="src\game\saturn\SaturnTitle.cpp" />
     <ClCompile Include="src\game\saturn\SaturnTyrant.cpp" />
     <ClCompile Include="src\game\Rendering.cpp" />
     <ClCompile Include="src\game\JpnTextTables.cpp" />
@@ -211,6 +210,7 @@
     <ClCompile Include="src\marni\MarniXInput.cpp" />
     <ClCompile Include="src\game\SoundSystem.cpp" />
     <ClCompile Include="src\game\GameOptions.cpp" />
+    <ClCompile Include="src\game\TitleMenuFont.cpp" />
     <ClCompile Include="src\game\TitleScreen.cpp" />
     <ClCompile Include="src\game\Bonus.cpp" />
     <ClCompile Include="src\game\CharacterSelectionScreen.cpp" />

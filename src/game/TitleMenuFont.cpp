@@ -1,15 +1,15 @@
-// SaturnTitle.cpp - the title menu's text in the original option typeface.
-// See SaturnTitle.h. The font file layout is documented in
+// TitleMenuFont.cpp - the title menu's text in the original option typeface.
+// See TitleMenuFont.h. The font file layout is documented in
 // tools/asset_migrator/src/core/TitleFont.h.
-#include "SaturnTitle.h"
+#include "TitleMenuFont.h"
 
-#include "../../Globals.h"
-#include "../../DebugPrint.h"
-#include "../FileLoader.h"
-#include "../../system/AssetPath.h"
-#include "../../system/HdTextures.h"
-#include "../../platform/platform.h"
-#include "../HdText.h"
+#include "../Globals.h"
+#include "../DebugPrint.h"
+#include "FileLoader.h"
+#include "../system/AssetPath.h"
+#include "../system/HdTextures.h"
+#include "../platform/platform.h"
+#include "HdText.h"
 
 #include <cmath>
 #include <cstdlib>
@@ -44,14 +44,14 @@ static int font_read(void)
     return (n != (size_t)-1 && n >= 8 && n <= FONT_FILE_MAX) ? (int)n : 0;
 }
 
-void saturn_title_font_forget(void)
+void title_font_forget(void)
 {
     s_fontState = 0;
     // The HD fonts are named after the tree's files too.
     HdFont_ForgetAll();
 }
 
-int saturn_title_font_load(void)
+int title_font_load(void)
 {
     if (s_fontState != 0) return s_fontState > 0;
     s_fontState = -1;
@@ -80,7 +80,7 @@ int saturn_title_font_load(void)
 
     const int height = s_fontFile[4];
     const int count = s_fontFile[7];
-    if (height <= 0 || height > SATURN_TITLE_STRIP_H || count <= 0) return 0;
+    if (height <= 0 || height > TITLE_FONT_STRIP_H || count <= 0) return 0;
 
     memset(s_glyphs, 0, sizeof(s_glyphs));
     size_t pos = 8;
@@ -127,7 +127,7 @@ static int text_width(const char* text)
 #define SHEET_STRIDE  128
 #define SHEET_H       256
 
-// The items the last sheet was built from (saturn_title_build_strips), for its
+// The items the last sheet was built from (title_font_build_strips), for its
 // HD picture. The callers' tables are static.
 static const char* const* s_stripItems = NULL;
 static int                s_stripCount = 0;
@@ -166,11 +166,11 @@ static void draw_text(unsigned char* pix, int y, const char* text, int bright)
     }
 }
 
-unsigned int saturn_title_build_strips(unsigned char* out,
+unsigned int title_font_build_strips(unsigned char* out,
                                        const char* const* items, int count)
 {
     if (out == NULL || items == NULL || s_fontState <= 0) return 0;
-    if (count <= 0 || count > SATURN_TITLE_STRIP_MAX) return 0;
+    if (count <= 0 || count > TITLE_FONT_STRIP_MAX) return 0;
 
     const unsigned int pixBytes = SHEET_STRIDE * SHEET_H;
     const unsigned int headerBytes = 0x40;
@@ -198,9 +198,9 @@ unsigned int saturn_title_build_strips(unsigned char* out,
     *(unsigned short*)p = SHEET_H;            p += 2;
 
     for (int i = 0; i < count; i++) {
-        const int y = i * SATURN_TITLE_STRIP_PITCH;
+        const int y = i * TITLE_FONT_STRIP_PITCH;
         draw_text(p, y, items[i], 0);
-        draw_text(p, y + SATURN_TITLE_STRIP_H, items[i], 1);
+        draw_text(p, y + TITLE_FONT_STRIP_H, items[i], 1);
     }
     s_stripItems = items;
     s_stripCount = count;
@@ -325,7 +325,7 @@ static int hd_draw_text(const HdFont* font, unsigned int* sheet, int sheetW, int
     return 1;
 }
 
-void saturn_title_load_strips(void* tim, short texId, int slot)
+void title_font_load_strips(void* tim, short texId, int slot)
 {
     unsigned int* low = NULL;
     unsigned int* hd = NULL;
@@ -341,7 +341,7 @@ void saturn_title_load_strips(void* tim, short texId, int slot)
         hdSide = SHEET_W * scale;
         low = (unsigned int*)malloc(sizeof(unsigned int) * SHEET_W * SHEET_H);
         hd = (unsigned int*)malloc(sizeof(unsigned int) * (size_t)hdSide * (size_t)hdSide);
-        cov = (unsigned char*)malloc((size_t)hdSide * (size_t)(SATURN_TITLE_STRIP_H * scale));
+        cov = (unsigned char*)malloc((size_t)hdSide * (size_t)(TITLE_FONT_STRIP_H * scale));
     }
     // The 4bpp sheet as the upload will see it, to match the upload by.
     int ok = (low != NULL && hd != NULL && cov != NULL) &&
@@ -355,13 +355,13 @@ void saturn_title_load_strips(void* tim, short texId, int slot)
             const int width = text_width(s_stripItems[i]);
             const float centreX = (float)((SHEET_W - width) / 2) + (float)width * 0.5f;
             for (int bright = 0; bright < 2 && ok; bright++) {
-                const int y = i * SATURN_TITLE_STRIP_PITCH + (bright ? SATURN_TITLE_STRIP_H : 0);
+                const int y = i * TITLE_FONT_STRIP_PITCH + (bright ? TITLE_FONT_STRIP_H : 0);
                 const int index = bright ? 1 : 2;
                 const unsigned short clr = (unsigned short)(t[20 + index * 2] | (t[21 + index * 2] << 8));
                 const unsigned int colour = (((clr >> 10) & 0x1F) * 255 / 31) << 16 |
                                             (((clr >> 5) & 0x1F) * 255 / 31) << 8 |
                                             ((clr & 0x1F) * 255 / 31);
-                ok = hd_draw_text(font, hd, hdSide, hdSide, y, SATURN_TITLE_STRIP_H, centreX,
+                ok = hd_draw_text(font, hd, hdSide, hdSide, y, TITLE_FONT_STRIP_H, centreX,
                                   s_stripItems[i], colour, scale, cov);
             }
         }
@@ -444,7 +444,7 @@ struct TitleSheet {
     int count;
 };
 
-static const TitleSheet kTitleSheets[SATURN_TITLE_SHEET_COUNT] = {
+static const TitleSheet kTitleSheets[TITLE_FONT_SHEET_COUNT] = {
     { kSheetUsaStart,     (int)(sizeof(kSheetUsaStart) / sizeof(kSheetUsaStart[0])) },
     { kSheetUsaPress,     (int)(sizeof(kSheetUsaPress) / sizeof(kSheetUsaPress[0])) },
     { kSheetDcMain,       (int)(sizeof(kSheetDcMain) / sizeof(kSheetDcMain[0])) },
@@ -502,7 +502,7 @@ static int hd_draw_copyright(const HdFont* font, int sheetW, int rows, float ink
     return 1;
 }
 
-void saturn_title_load_sheet(int sheet, void* tim, short texId, short pageOffset,
+void title_font_load_sheet(int sheet, void* tim, short texId, short pageOffset,
                              int slot, int unused, short posX, short posY,
                              unsigned int flags)
 {
@@ -512,10 +512,10 @@ void saturn_title_load_sheet(int sheet, void* tim, short texId, short pageOffset
     int w = 0, h = 0, scale = 0, drawn = 0;
 
     // Loaded here as well: the release's sheet goes up before the menu's.
-    saturn_title_font_load();
+    title_font_load();
     const HdFont* black = title_hd_font();
     const HdFont* narrow = HdFont_Text();
-    const TitleSheet* def = (sheet >= 0 && sheet < SATURN_TITLE_SHEET_COUNT) ? &kTitleSheets[sheet] : NULL;
+    const TitleSheet* def = (sheet >= 0 && sheet < TITLE_FONT_SHEET_COUNT) ? &kTitleSheets[sheet] : NULL;
     if (tim != NULL && def != NULL && (black != NULL || narrow != NULL)) {
         low = (unsigned int*)malloc(sizeof(unsigned int) * SHEET_W * SHEET_H);
     }

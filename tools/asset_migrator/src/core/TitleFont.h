@@ -19,7 +19,7 @@
 //   +7  u8 glyph count
 //   +8  per glyph: u8 character, u8 width, then width*height bytes, row-major,
 //       0 = clear, 1 = half-tone (anti-aliased corner), 2 = full
-// The game (src/game/saturn/SaturnTitle.cpp) checks the magic and every length.
+// The game (src/game/TitleMenuFont.cpp) checks the magic and every length.
 // Its menu strips are 12 rows tall, so the height must not exceed 12.
 //
 // With HD textures on, the menu is drawn in a real font instead, written to

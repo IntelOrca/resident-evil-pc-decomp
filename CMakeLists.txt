@@ -94,6 +94,7 @@ set(RE1_SOURCES
     src/game/TaskScheduler.cpp
     src/game/TextureLoader.cpp
     src/game/GameOptions.cpp
+    src/game/TitleMenuFont.cpp
     src/game/TitleScreen.cpp
     src/game/TmdAnimation.cpp
     src/game/TmdRenderer.cpp
@@ -114,7 +115,6 @@ set(RE1_SOURCES
     src/game/saturn/SaturnRoomObjects.cpp
     src/game/saturn/SaturnTick.cpp
     src/game/saturn/SaturnTickAnim.cpp
-    src/game/saturn/SaturnTitle.cpp
     src/game/saturn/SaturnTyrant.cpp
 
     src/game/entities/Adder.cpp

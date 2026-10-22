@@ -614,9 +614,9 @@ that keeps one texel to about one screen pixel.
 
 The title menu's lines (NEW GAME / LOAD GAME / EXTRA / OPTIONS, BATTLE GAME /
 BACK) are a 256x256 4bpp sheet the game builds from `Data/TITLEFNT.BIN`
-(`saturn_title_build_strips`, `src/game/saturn/SaturnTitle.cpp`), so no
+(`title_font_build_strips`, `src/game/TitleMenuFont.cpp`), so no
 picture can be named after a file, and a hash-named one would go stale with
-every change to the item list. `saturn_title_load_strips` draws the same sheet
+every change to the item list. `title_font_load_strips` draws the same sheet
 in `TITLEFNT.TTF` and hands it to the upload as an `HdPictureScope`:
 `CreateTextureHd` uploads it for any texture whose pixels are exactly the 4bpp
 sheet's, after the hash lookup finds no file. A `HD/<hash>.webp` made from a
@@ -640,7 +640,7 @@ letters as `assets/fonts/title_font.ttf`, which can be copied over
 PRESS START BUTTON, the copyright lines, the USA sheet's NEW GAME / LOAD GAME
 frames and the Director's Cut's difficulty cells are pictures in the release's
 sheets (`data\t_start.tim` / `t_press.tim`; the Director's Cut's pages A and B
-built from `bt367oab.tim`). `saturn_title_load_sheet` gives each sheet an HD
+built from `bt367oab.tim`). `title_font_load_sheet` gives each sheet an HD
 picture the same way: the sheet's own texels enlarged, with every text line of
 its table (`kSheetUsaStart` ...) drawn again over a band cleared to the line's
 colour - the option lines in the title font exactly as the menu draws its own,

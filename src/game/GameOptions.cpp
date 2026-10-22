@@ -19,7 +19,7 @@
 #include "OptionsMenu.h"            // options_render_entity
 #include "SFXIds.h"
 #include "saturn/SaturnBattle.h"
-#include "saturn/SaturnTitle.h"
+#include "TitleMenuFont.h"
 
 #include <cstdarg>
 #include <cstdio>
