@@ -67,11 +67,11 @@ static DieScreenTexEntry s_dieStripTemplate = {
     0x41000000, -128, -32, 255, 1, 0x00, 0x00, 0x01FF
 };
 
-// 0x004bd2b0 - one-shot flag: the first death screen hides joint 1 (the
-// head) by clearing its visibility bit, then clears the flag. Shared with the
-// hunter's pounce grab, which sets it (Hunter.cpp 0x00417a20); defined in
-// Globals.cpp with its image value 0x00006C6C.
-extern int DAT_004bd2b0;
+// 0x004bd2b0 - one-shot flag: the death screen hides joint 1 (the head) by
+// clearing its draw bit, then clears the flag. Set by the hunter's pounce grab
+// (Hunter.cpp 0x00417a20); defined in Globals.cpp, which explains why it
+// starts at 0 here rather than the original's 0x00006C6C.
+extern int g_dieScreenHideHead;
 
 // 0x004bd320 / 0x004bd328 - tyrant impale transform: rotation applied to
 // joint 2 and the offset applied through joint 0's transform.
@@ -273,11 +273,11 @@ void display_die_screen(void)
 
     StMask(0, 5);
 
-    // One-shot: hide joint 1 (the head) on the first death screen.
-    if (DAT_004bd2b0 != 0) {
+    // One-shot: hide joint 1 (the head) after a hunter decapitation.
+    if (g_dieScreenHideHead != 0) {
         g_playerEntity.jointsStructs[1].flags &= 0xFE;
     }
-    DAT_004bd2b0 = 0;
+    g_dieScreenHideHead = 0;
 
     unsigned char state      = 0;   // local_a   - state machine index
     short         imageIdx   = 0x3B; // sVar4    - wave amplitude index

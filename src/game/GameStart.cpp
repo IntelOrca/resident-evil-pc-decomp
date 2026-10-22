@@ -410,6 +410,9 @@ void InitializeGame(void)
     // 0x00412380: empty in the original - call dropped
 
     ResetGameStateBlock();
+    // Port addition (0x004bd2b0 is outside the wipe range): a hunter grab cut
+    // short by a return to the title must not behead the next game's corpse.
+    g_dieScreenHideHead = 0;
 
     g_loadDataDestPointer = g_DataBuffer;
     g_SpecialRoomLightDelta = 0;

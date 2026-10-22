@@ -87,8 +87,8 @@ extern void zombie_check_special_weapon(void);                     // 0x0043d8a0
 
 // 0x004bd2b0 - shared one-shot flag, defined in Globals.cpp. The pounce grab
 // sets it to 1 (hunter_pounce_track); the death screen consumes and clears it
-// while hiding the player's head joint. Image value 0x00006C6C.
-extern int DAT_004bd2b0;                                           // 0x004bd2b0
+// while hiding the player's head joint.
+extern int g_dieScreenHideHead;                                    // 0x004bd2b0
 
 // 0x00be0de4 / 0x00be0de8 - shared entity scratch, defined in EntityCommon.cpp.
 extern int player_distance_z;                                      // 0x00be0de4
@@ -1356,7 +1356,10 @@ static void hunter_pounce_track(void) // 0x00417a20
 {
     ENTITY->action_state = (unsigned char)(ENTITY->action_state +
         (char)Joint_move(0, ENTITY->animHeader, ENTITY->animBase, 0x400));
-    DAT_004bd2b0 = 1;
+    // The PS1 hides the head right here (joint 1 flags &= 0xFE, STAGE3.EXE
+    // 0x801174fc); the PC leaves it drawn and defers the hide to the death
+    // screen through this flag.
+    g_dieScreenHideHead = 1;
     hunter_track_player_joint();
 }
 
