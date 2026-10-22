@@ -216,6 +216,10 @@ static void ApplyBlend(MarniBlend blend)
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE);
         break;
+    case MARNI_BLEND_ADD_ALPHA:
+        glEnable(GL_BLEND);
+        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        break;
     case MARNI_BLEND_DISABLE:
         glDisable(GL_BLEND);
         break;

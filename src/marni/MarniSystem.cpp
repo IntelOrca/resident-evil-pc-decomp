@@ -1231,6 +1231,21 @@ void MarniDrawSpriteAdd(float x, float y, float w, float h,
                              MARNI_BLEND_ADD);
 }
 
+// Port-only: src * srcAlpha + dst. The PS1's additive semi-transparency modes
+// (ABR 1 = B + F, ABR 3 = B + F/4) for the effect sprites, with the rate in
+// the vertex alpha; unlike MarniDrawSpriteAdd the texel alpha still keys out
+// the transparent texels, so an HD page with colour under alpha 0 adds nothing.
+void MarniDrawSpriteAddAlpha(float x, float y, float w, float h,
+                             float u0, float v0, float u1, float v1,
+                             DWORD color, MarniHandle tex)
+{
+    CMarniDirect3D* pD3D = (CMarniDirect3D*)g_pMarniDirect3D;
+    if (!pD3D || !pD3D->m_isInitialized) return;
+    pD3D->m_pDX->DrawSprite(x, y, w, h, u0, v0, u1, v1,
+                             color, tex, MARNI_SAMPLER_POINT,
+                             MARNI_BLEND_ADD_ALPHA);
+}
+
 // Only the ground shadow / blood pool (AddFadePoly, type 12) draws through
 // here, and it stretches a 26x29 gradient over a quad several times that size.
 // Point sampling turned the soft blob into visible texel blocks with straight

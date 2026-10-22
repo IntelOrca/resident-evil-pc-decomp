@@ -38,6 +38,8 @@ typedef enum MarniBlend : DWORD32 {
     MARNI_BLEND_ALPHA    = 0,   // src*srcA + dst*(1-srcA) — standard alpha blend
     MARNI_BLEND_ADD      = 1,   // src + dst (light/flash effects)
     MARNI_BLEND_DISABLE = 2,   // no blending — straight overwrite
+    MARNI_BLEND_ADD_ALPHA = 3, // src*srcA + dst — PS1 ABR 1/3 (B+F, B+F/4) with the
+                               // texel alpha as the transparent key
 } MarniBlend;
 
 // ============================================================================

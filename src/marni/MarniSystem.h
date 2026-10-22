@@ -145,6 +145,11 @@ void  MarniDrawSprite(float x, float y, float w, float h,
 void  MarniDrawSpriteAdd(float x, float y, float w, float h,
                          float u0, float v0, float u1, float v1,
                          DWORD color, MarniHandle tex);
+// Same quad, src * srcAlpha + dst - the PS1's ABR 1 / ABR 3 for effect sprites,
+// the rate carried in the vertex alpha.
+void  MarniDrawSpriteAddAlpha(float x, float y, float w, float h,
+                              float u0, float v0, float u1, float v1,
+                              DWORD color, MarniHandle tex);
 
 // Draw perspective-correct textured triangles. verts: triCount*3 vertices,
 // each 10 floats { x, y (screen px, Y-down), z (NDC [0,1], used when

@@ -895,6 +895,14 @@ extern unsigned char g_effectSpritePageV[50];
 // load_effect_sprites from the RDT-embedded room TIMs (and by
 // load_shoot_direction_data for the core00 sheets). Port-only companion table.
 extern unsigned char g_effectSpriteClutRows[50];
+// Per-sprite bitmask of the sheet TIM's CLUT rows (bit r = row r, rows 0-3)
+// whose drawn entries carry the PS1 STP bit (bit 15). The PS1 GPU applies a
+// sprite's semi-transparency only to STP texels, so a semi-transparent effect
+// drawn in a row without STP is opaque there (type 5: muzzle-flash rows 0/1 are
+// opaque, the shoot-the-camera glass row 2 blends). Read from core00.etm and the
+// room TIMs, which keep the bits; the PC Effspr pages the port bakes from do
+// not. Port-only companion table, filled next to g_effectSpriteClutRows.
+extern unsigned char g_effectSpriteStpRows[50];
 
 // Entity joint animation copy base (set by SetupEntityJointAnimation)
 extern int           DAT_00be0e00;                     // 0x00be0e00

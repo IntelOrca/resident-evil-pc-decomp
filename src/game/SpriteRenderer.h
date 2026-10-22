@@ -119,6 +119,19 @@ static_assert(sizeof(TextureDraw) == 0x54, "TextureDraw size mismatch");
 // producers (display_texture, AddSprite_Ex) raise this for a variant-2
 // descriptor and the flush draws it additively instead.
 #define SPRITE_FLAG_ADDITIVE   0x40u
+// Port-only. src * alpha + dst: the PS1's ABR 1 (B + F, alpha 1) and ABR 3
+// (B + F/4, alpha 0.25) for effect sprites (SubmitEffectSprite's ps1Blend).
+#define SPRITE_FLAG_ADD_ALPHA  0x80u
+
+// SubmitEffectSprite's port-only ps1Blend argument. EFFECT_BLEND_PC keeps the
+// 1997 PC rule (the band table's blendMode is the alpha); the others are the
+// PS1 GsSPRITE blend effect_submit_sprite resolved for the sprite.
+#define EFFECT_BLEND_PC        (-2)
+#define EFFECT_BLEND_OPAQUE    (-1)   // semi-transparency off, or no STP texels
+#define EFFECT_BLEND_ABR0      0      // 0.5 B + 0.5 F
+#define EFFECT_BLEND_ABR1      1      // B + F
+#define EFFECT_BLEND_ABR2      2      // B - F (no shipped effect uses it)
+#define EFFECT_BLEND_ABR3      3      // B + F/4
 
 // The PS1 blend of a 2D menu sprite, on top of SpriteBuildFlags().
 #define TEXDESC_VARIANT_PS1_ADD 2     // GetTextureVariant() value of ABR 1
@@ -227,7 +240,8 @@ int AddFadePoly(unsigned short alpha, int transZ, int sortZ, int tpage,
                 const int* wz, const int* cu, const int* cv, int count);
 int SubmitEffectSprite(TextureDesc* texture, int depth, int textureId,
                        unsigned char r, unsigned char g, unsigned char b,
-                       int scaleX, int scaleY, int blendMode, short brightness);
+                       int scaleX, int scaleY, int blendMode, short brightness,
+                       int ps1Blend = EFFECT_BLEND_PC);
 
 int DrawPrim_SpriteLarge(int* params, unsigned short alpha, int tpage,
                          unsigned int u, unsigned int v, unsigned int clut);

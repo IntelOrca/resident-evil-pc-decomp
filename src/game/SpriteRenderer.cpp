@@ -342,7 +342,9 @@ void FlushSpriteCommandsRange(unsigned int minDepth, unsigned int maxDepth,
         if (cmd->spriteFlags & SPRITE_FLAG_MIRROR_U) { float t = u0; u0 = u1; u1 = t; }
         if (cmd->spriteFlags & SPRITE_FLAG_MIRROR_V) { float t = v0; v0 = v1; v1 = t; }
 
-        if (cmd->spriteFlags & SPRITE_FLAG_ADDITIVE) {
+        if (cmd->spriteFlags & SPRITE_FLAG_ADD_ALPHA) {
+            MarniDrawSpriteAddAlpha(x, y, w, h, u0, v0, u1, v1, color, srv);
+        } else if (cmd->spriteFlags & SPRITE_FLAG_ADDITIVE) {
             MarniDrawSpriteAdd(x, y, w, h, u0, v0, u1, v1, color, srv);
             // The PS1 blends only the STP texels; the rest of the sprite is
             // opaque. Where the page was loaded with that split, lay its
@@ -630,7 +632,8 @@ int AddSprite(TextureDesc* texture, short depth, int tpage, int fade) {
 // ============================================================================
 int SubmitEffectSprite(TextureDesc* texture, int depth, int textureId,
                        unsigned char r, unsigned char g, unsigned char b,
-                       int scaleX, int scaleY, int blendMode, short brightness) {
+                       int scaleX, int scaleY, int blendMode, short brightness,
+                       int ps1Blend) {
     if (g_SpriteQueueCount >= MAX_SPRITE_COMMANDS - 1) return 0;
 
     // Both only feed the OT bucket, which the port does not use.
@@ -675,6 +678,30 @@ int SubmitEffectSprite(TextureDesc* texture, int depth, int textureId,
     cmd->variantAlpha = (float)blendMode * 0.00390625f;
     cmd->alpha        = SpriteDrawAlpha(cmd->variantAlpha);
     cmd->extraFlags = textureId;
+
+    // Port-only: the PS1 blend instead of the PC's band-table one (see
+    // effect_submit_sprite). ABR 2 (subtract) has no shipped user and the
+    // renderer has no reverse-subtract state, so it falls back to ABR 0.
+    switch (ps1Blend) {
+    case EFFECT_BLEND_PC:
+        break;
+    case EFFECT_BLEND_OPAQUE:
+        cmd->alpha = 1.0f;
+        break;
+    case EFFECT_BLEND_ABR1:
+        cmd->alpha = 1.0f;
+        cmd->spriteFlags |= SPRITE_FLAG_ADD_ALPHA;
+        break;
+    case EFFECT_BLEND_ABR3:
+        cmd->alpha = 0.25f;
+        cmd->spriteFlags |= SPRITE_FLAG_ADD_ALPHA;
+        break;
+    case EFFECT_BLEND_ABR0:
+    case EFFECT_BLEND_ABR2:
+    default:
+        cmd->alpha = 0.5f;
+        break;
+    }
 
     if (useSubpixel) {
         int iVar4 = (int)texture->pivotX * (int)texture->scaleX;
