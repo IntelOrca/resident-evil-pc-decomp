@@ -1,6 +1,7 @@
 #pragma once
 // Small filesystem/string helpers shared by the core. Kept Qt-free.
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
