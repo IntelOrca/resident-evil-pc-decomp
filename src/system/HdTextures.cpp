@@ -469,7 +469,22 @@ std::unordered_map<const void*, OwnerEntry> s_owners;
 // Kept apart from s_seen so a key can never collide with a hash name.
 std::unordered_map<std::string, unsigned char> s_namedSeen;
 
+// Per key: whether a mode's key may borrow the base release's HD picture of
+// the same name (HdTextures_SetBaseFallback). A key not in here may.
+std::unordered_map<std::string, bool> s_baseFallback;
+
 }  // namespace
+
+void HdTextures_SetBaseFallback(const char* key, bool allowed)
+{
+    if (key == NULL || key[0] == '\0') return;
+    s_baseFallback[key] = allowed;
+}
+
+bool HdTextures_BaseFallbackKnown(const char* key)
+{
+    return key != NULL && s_baseFallback.find(key) != s_baseFallback.end();
+}
 
 void HdTextures_SetOwnerKey(const void* owner, const void* tag, const char* key)
 {
@@ -560,6 +575,11 @@ bool NamedPath(const char* key, char* out, size_t outSize, const char* ext = ".w
         (treeLen == 3 && _strnicmp(key, "JPN", 3) == 0)) {
         return true;
     }
+    // A mode's file of the same name that is NOT the base file's picture (the
+    // DC's EM1032 is its own outfit, the PC's is the PC outfit): the base HD
+    // art was drawn for another layout.
+    std::unordered_map<std::string, bool>::const_iterator fb = s_baseFallback.find(key);
+    if (fb != s_baseFallback.end() && !fb->second) return true;
     char baseRel[260];
     char basePath[300];
     char baseNorm[300];

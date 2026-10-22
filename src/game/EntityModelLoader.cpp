@@ -5,7 +5,11 @@
 #include "../marni/PSXTexture.h"
 #include "FileLoader.h"
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include "../platform/platform.h"     // plat_file_read_all (HD skin check)
 #include "../system/AssetPath.h"
+#include "../system/HdTextures.h"
 #include "dc/EntityModels.h"
 #include "dc/Items.h"        // DC_ITEM_BERETTA_CUSTOM
 #include "saturn/SaturnModels.h"
@@ -517,6 +521,56 @@ void InitScaMatrix(int param1, ScaMatrixData* scaData)
 // hdKey (hdKeySize bytes) onto the outfit's file, whose texture it now is. On
 // any failure the NPC is left exactly as loaded.
 // ============================================================================
+// Port-only (HD skins, HdTextures_SetBaseFallback): a model read from a mode's
+// tree may borrow the base release's HD skin of the same file name only when
+// both files carry the same TIM. The DC and Saturn overlays reuse PC names for
+// models of their own (the DC's EM1032/EM1033 are its outfits, the PC's the PC
+// outfits; the Saturn's EM1016 is the Tick), and the base skin laid over their
+// UVs is a patchwork. `file`/`size` is the EMD as loaded, `relPath` its path
+// under the tree, `key` its HD key. Decided once per key.
+static const unsigned char* EmdTim(const unsigned char* file, unsigned int size, unsigned int* timSize)
+{
+    if (size < 0x20) return NULL;
+    const unsigned int end = size & 0xFFFFFFFC;
+    const unsigned int tim = ((const unsigned int*)(file + end - 0x14))[4] & 0xFFFFFFFC;
+    if (tim >= end - 0x14) return NULL;
+    *timSize = end - 0x14 - tim;
+    return file + tim;
+}
+
+static void HdCheckModelBaseSkin(const char* key, const char* relPath,
+                                 const unsigned char* file, unsigned int size)
+{
+    if (!HdTextures_Active() || key == NULL || key[0] == '\0') return;
+    if (strncmp(key, "USA/", 4) == 0 || strncmp(key, "JPN/", 4) == 0) return;   // the base tree's own
+    if (HdTextures_BaseFallbackKnown(key)) return;
+
+    bool same = false;
+    unsigned int timSize = 0;
+    const unsigned char* tim = EmdTim(file, size, &timSize);
+    if (tim != NULL && AssetBaseHasFile(-1, relPath)) {
+        char savedOverlay[16] = "";
+        strncpy(savedOverlay, GetAssetModeName(), sizeof(savedOverlay) - 1);
+        SetAssetMode("");
+        char path[300];
+        char resolved[300];
+        char norm[300];
+        snprintf(path, sizeof(path), "%s%s", GAME_DATA_ROOT, relPath);
+        const char* basePath = plat_normalize_path(ResolveAssetRoot(path, resolved, sizeof(resolved)),
+                                                   norm, sizeof(norm));
+        SetAssetMode(savedOverlay);
+        size_t baseSize = 0;
+        unsigned char* base = (unsigned char*)plat_file_read_all(basePath, &baseSize);
+        if (base != NULL) {
+            unsigned int baseTimSize = 0;
+            const unsigned char* baseTim = EmdTim(base, (unsigned int)baseSize, &baseTimSize);
+            same = baseTim != NULL && baseTimSize == timSize && memcmp(baseTim, tim, timSize) == 0;
+            free(base);
+        }
+    }
+    HdTextures_SetBaseFallback(key, same);
+}
+
 static void LoadNpcOutfit(const BonusModel* outfit, int npcBase, unsigned int npcSize, int* modelPtr,
                           char* hdKey, size_t hdKeySize)
 {
@@ -544,6 +598,7 @@ static void LoadNpcOutfit(const BonusModel* outfit, int npcBase, unsigned int np
     if (size == 0xFFFFFFFF || size < 0x20) {
         return;
     }
+    HdCheckModelBaseSkin(outfitKey, g_emdPathTable[outfit->row], src, size);
 
     const unsigned int end = size & 0xFFFFFFFC;
     const unsigned int* dir = (const unsigned int*)(src + end - 0x14);
@@ -689,6 +744,9 @@ void LoadEntityEMD(Entity* em, unsigned char entity_id)
     if (AssetSourceKey(FILE_PATH, hdKey, sizeof(hdKey)) == NULL) hdKey[0] = '\0';
     if (loadOverlay != NULL) SetAssetMode(savedOverlay);
     int data_pointer = (int)g_loadDataDestPointer;
+    if (fileSize != 0xFFFFFFFF) {
+        HdCheckModelBaseSkin(hdKey, emdPath, (const unsigned char*)data_pointer, fileSize);
+    }
 
     if ((g_main_state_flags2 & MSF2_COSTUME_VARIANT) != 0 && (unsigned int)g_bCostumeVariant - entity_id == -51) {
         entity_id = g_playerEntity.id & 1;

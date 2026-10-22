@@ -98,6 +98,14 @@ bool HdTextures_OwnerPerPalette(const void* owner);
 // registered with.
 const char* HdTextures_OwnerKey(const void* owner, const void** tag);
 
+// A mode's key ("DC/...", "SATURN/...") with no HD picture of its own borrows
+// the base release's picture of the same name ("USA/..."). That is only right
+// when the mode's file holds the same picture: the loader that knows says so
+// here (false = never borrow for `key`), before the texture is uploaded. A key
+// never set may borrow. Known = it has been decided this session.
+void HdTextures_SetBaseFallback(const char* key, bool allowed);
+bool HdTextures_BaseFallbackKnown(const char* key);
+
 // True when dumping is on and `key` has not been dumped yet this session; the
 // caller then builds the image and hands it to HdTextures_DumpNamed.
 bool HdTextures_NamedDumpWanted(const char* key);
