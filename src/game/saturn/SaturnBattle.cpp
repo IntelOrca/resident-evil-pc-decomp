@@ -858,13 +858,13 @@ int saturn_battle_model_override(Entity* e, int slot)
 // CLUT copy (0x0603BD0A) for every model loaded in arena 15. On the PC the
 // EMD's texture is a TIM at the file's tail; its CLUT block is patched before
 // ProcessTmdAsync uploads it.
-void saturn_battle_tint_model_tim(unsigned char* tim)
+int saturn_battle_tint_model_tim(unsigned char* tim)
 {
-    if (saturn_battle_arena_index() != SATURN_BATTLE_GOLD_ARENA || tim == NULL) return;
+    if (saturn_battle_arena_index() != SATURN_BATTLE_GOLD_ARENA || tim == NULL) return 0;
     const unsigned int* hdr = (const unsigned int*)tim;
-    if (hdr[0] != 0x10 || (hdr[1] & 8) == 0) return;       // TIM with a CLUT
+    if (hdr[0] != 0x10 || (hdr[1] & 8) == 0) return 0;     // TIM with a CLUT
     const unsigned int clutBytes = hdr[2];                  // block incl. its 12-byte header
-    if (clutBytes <= 12) return;
+    if (clutBytes <= 12) return 0;
     unsigned short* c = (unsigned short*)(tim + 8 + 12);
     const unsigned int n = (clutBytes - 12) / 2;
     for (unsigned int i = 0; i < n; i++) {
@@ -877,6 +877,7 @@ void saturn_battle_tint_model_tim(unsigned char* tim)
         b = b < 0 ? 0 : (b > 31 ? 31 : b);
         c[i] = (unsigned short)((v & 0x8000) | (b << 10) | (g << 5) | r);
     }
+    return 1;
 }
 
 // ---------------------------------------------------------------------------

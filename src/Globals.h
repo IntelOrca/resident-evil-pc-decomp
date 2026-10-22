@@ -1953,6 +1953,7 @@ void ProcessTextureImage(void* imageBuffer, short textureBankID, short pageOffse
 void LoadTexturePage(void* imageBuffer, short texId, short pageOffset, int slotIndex,
                      int unused, short posX, short posY, unsigned int flags);
 void LoadEffectTextureSheet(int slot, void* timData);   // effect sheets at explicit slots (TextureLoader.cpp)
+DWORD* EffectTextureSheet_BuildRGBA(void* timData, int* outW, int* outH, int* outBpp); // its pixels; caller delete[]s
 int  LoadEffectTextureSheetVariants(int baseSlot, void* timData, int maxRows);  // one SRV per CLUT row (TextureLoader.cpp)
 int  create_texture_page(void* data, int mode);
 void destroy_texture_page(int handle);
@@ -2127,6 +2128,9 @@ void  operator_delete(void* ptr);
 // --- Title screen ---
 void set_display_resolution(int w, int h, int mode);
 void display_image(int slot, void* buffer, int width, int height);
+void display_image_rgba(int slot, const void* rgba, int texWidth, int texHeight,
+                        int width, int height);   // port-only
+void display_image_to_rgba(const void* buffer, int pixelCount, unsigned int* rgba); // port-only
 void title_setup_texture_pages(int slot, int mode);
 int  check_save_files_exist(void);
 void UpdateTitleTextSprite(unsigned char brightness, unsigned char selectionId);

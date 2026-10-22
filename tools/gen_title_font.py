@@ -20,7 +20,9 @@ Output (BMFont text format, 1 page, white glyphs on transparent):
         table. The Saturn disc has no such font (its menu uses a different
         typeface) so the asset migrator carries the glyphs and writes them to
         SATURN/Data/TITLEFNT.BIN, which the port's Saturn title menu reads.
-        Re-run this script and commit the .inc if a glyph changes.
+        Re-run this script and commit the .inc if a glyph changes - and then
+        tools/gen_title_font_outlines.py, whose hand-drawn outlines of the same
+        letters (the HD menu text) are checked against this bitmap.
 
 Usage (repo root):  python tools/gen_title_font.py [BT367OAB.TIM] [out_dir]
 """

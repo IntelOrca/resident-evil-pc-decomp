@@ -64,6 +64,13 @@ BOOL plat_path_is_absolute(const char* path);
 // NULL security descriptor. Returns TRUE if the directory exists afterwards.
 BOOL plat_mkdir(const char* path);
 
+// Enumerate a directory: `visit` is called once per entry (never for "." or
+// ".."), with the entry's own name and whether it is a directory. Returns
+// FALSE when `path` is not a directory that can be read. Port-only; used to
+// index the HD texture folder (system/HdTextures.cpp).
+typedef void (*PlatDirVisit)(const char* name, BOOL isDirectory, void* user);
+BOOL plat_dir_list(const char* path, PlatDirVisit visit, void* user);
+
 // Write a buffer to a file, creating or truncating it. Returns TRUE on success.
 // Replaces the CreateFileA/WriteFile pair in MarniBits::SaveBitmapToFile.
 BOOL plat_file_write(const char* path, const void* data, size_t size);

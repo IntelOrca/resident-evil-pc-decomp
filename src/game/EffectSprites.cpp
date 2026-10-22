@@ -15,6 +15,8 @@
 #include <cstring>
 #include "../system/AssetPath.h"
 #include "../DebugPrint.h"
+#include "../system/HdTextures.h"   // HdRegionScope, HdPageScope (port-only)
+#include "dc/ArrangeStages.h"          // room_effect_page_entry
 
 // TMD texture header struct (output of ParseTmdTextureHeader)
 // Packed struct matching the original byte layout (28 bytes = 0x1C)
@@ -458,6 +460,67 @@ static void blit_effect_tim_at(DWORD* page, const unsigned char* tim,
     }
 }
 
+// ---------------------------------------------------------------------------
+// HD names for the room's effect pages (port-only, HdTextures.h).
+//
+// The pages composited above are the room's Effspr page files: page p is
+// g_EffectSpriteNames[room_effect_page_entry()[p]], the same row the effect
+// renderer reads, and the RDT's TIMs are that file's art at the same place
+// (ESP204/208/213/214/220/227/228 came out texel for texel in a dump of the
+// mansion, the lab and the Tyrant room). Classic REbirth's packs replace the
+// file's whole page, and the asset migrator installs that picture as
+// HD/<TREE>/Effspr/espNNN.webp - which until now only the weapon bands
+// (BakeWeaponSheetFromPage) were named by, so the glass bursts and the Tyrant
+// tube's cracks stayed low-res. A room may draw one sprite in another palette
+// row than the file (ESP203's and ESP229's flare / drop rows): the page source
+// then draws those texels from the composite, and a page holding a texel the
+// file does not have at all is not named.
+// ---------------------------------------------------------------------------
+// The path of Effspr page file `nameIdx` (a g_RoomEffectSpriteTable byte):
+// false for 0xFF and anything past the name table. Also used to queue the
+// room's pages for decoding (RoomBackgroundWebp.cpp, room_hd_prefetch_early).
+bool effspr_page_path(unsigned char nameIdx, char* path, size_t pathSize)
+{
+    if (nameIdx >= sizeof(g_EffectSpriteNames) / sizeof(g_EffectSpriteNames[0])) return false;
+    snprintf(path, pathSize, GAME_DATA_ROOT "effspr\\%s.tim", g_EffectSpriteNames[nameIdx]);
+    return true;
+}
+
+static int render_effspr_page(unsigned char nameIdx, DWORD* out, char* path, size_t pathSize)
+{
+    if (!effspr_page_path(nameIdx, path, pathSize)) return 0;
+    const unsigned char* tim = (const unsigned char*)g_TimImageBuffer;
+    unsigned int size = LoadFile(path, (void*)tim, 0x20);
+    // 8 bpp with a 256 x 1 CLUT and a 256 x 256 image: the layout every
+    // shipped Effspr file has (see BakeWeaponSheetFromPage).
+    if (size < 20 + 512 + 12 + 256 * 256) return 0;
+    if (*(const unsigned int*)tim != 0x10 || *(const unsigned int*)(tim + 4) != 9) return 0;
+    if (*(const unsigned short*)(tim + 16) != 256 || *(const unsigned short*)(tim + 18) != 1) return 0;
+    const unsigned short* clut = (const unsigned short*)(tim + 20);
+    const unsigned char* img = tim + 20 + 512;
+    if (*(const unsigned short*)(img + 8) != 128 || *(const unsigned short*)(img + 10) != 256) return 0;
+    const unsigned char* pix = img + 12;
+    for (int i = 0; i < 256 * 256; i++) {
+        unsigned int idx = pix[i];
+        if (idx == 0) { out[i] = 0; continue; }       // the same key as the blit
+        unsigned short c = clut[idx];
+        unsigned int r = ((c >> 0)  & 0x1F) * 255 / 31;
+        unsigned int g = ((c >> 5)  & 0x1F) * 255 / 31;
+        unsigned int b = ((c >> 10) & 0x1F) * 255 / 31;
+        out[i] = 0xFF000000u | (b << 16) | (g << 8) | r;
+    }
+    return 1;
+}
+
+// True when every texel `page` draws is drawn by the file too.
+static bool effspr_page_within_file(const DWORD* page, const DWORD* file)
+{
+    for (int i = 0; i < 256 * 256; i++) {
+        if (page[i] != 0 && file[i] == 0) return false;
+    }
+    return true;
+}
+
 static void load_effect_sprites(void)
 {
     // The room's esp sprites use sheet slots 8-11 (the weapon FX hold 0-7),
@@ -524,6 +587,23 @@ static void load_effect_sprites(void)
                            g_effectSpritePageV[type], 0);
     }
 
+    // Port-only: each page's Effspr file as the game would draw it, the HD
+    // reference for the uploads below (see render_effspr_page).
+    static DWORD s_pageFile[4][256 * 256];
+    char hdKey[4][160];
+    bool hdFile[4] = { false, false, false, false };
+    if (HdTextures_Active()) {
+        const unsigned char* entry = room_effect_page_entry();
+        for (int i = 0; i < 4; i++) {
+            char path[256];
+            hdKey[i][0] = '\0';
+            if (entry[i] == 0xFF || !render_effspr_page(entry[i], s_pageFile[i], path, sizeof(path)))
+                continue;
+            HdTextures_KeyForPath(path, hdKey[i], sizeof(hdKey[i]));
+            hdFile[i] = hdKey[i][0] != '\0';
+        }
+    }
+
     // Upload the pages that got content (some pages may stay empty).
     for (int i = 0; i < 4; i++) {
         int slot = 11 + i;
@@ -532,6 +612,8 @@ static void load_effect_sprites(void)
             if (s_pageBuffer[i][px] != 0) { hasContent = true; break; }
         }
         if (hasContent) {
+            const bool named = hdFile[i] && effspr_page_within_file(s_pageBuffer[i], s_pageFile[i]);
+            HdPageScope hdSource(named ? hdKey[i] : NULL, 256, 256, s_pageFile[i]);
             MarniCreateTexture(256, 256, 32, s_pageBuffer[i], &g_TexturePageSRV[slot]);
             g_TexturePageWidth[slot] = 256;
             g_TexturePageHeight[slot] = 256;
@@ -570,6 +652,9 @@ static void load_effect_sprites(void)
             }
             if (hasContent) {
                 int slot = 152 + i * 4 + (int)row - 1;
+                const bool named = hdFile[i] &&
+                                   effspr_page_within_file(s_pageBuffer[i], s_pageFile[i]);
+                HdPageScope hdSource(named ? hdKey[i] : NULL, 256, 256, s_pageFile[i]);
                 MarniCreateTexture(256, 256, 32, s_pageBuffer[i], &g_TexturePageSRV[slot]);
                 g_TexturePageWidth[slot] = 256;
                 g_TexturePageHeight[slot] = 256;
@@ -700,6 +785,12 @@ static int BakeWeaponSheetFromPage(int slot, const char* pageName)
         if (Marni_DX() != NULL) Marni_DX()->DestroyTexture(g_TexturePageSRV[srvSlot]);
         g_TexturePageSRV[srvSlot] = MARNI_NULL_HANDLE;
     }
+    // Port-only: the band is rows [pageV, pageV + height) of the esp page, so
+    // an HD picture of the page, "HD/<TREE>/effspr/espNNN.webp", gives it
+    // (HdTextures.h).
+    char hdKey[160];
+    HdRegionScope hdSource(HdTextures_KeyForPath(path, hdKey, sizeof(hdKey)),
+                           0, pageV, 256, height, 256, 256);
     MarniCreateTexture(256, height, 32, rgba, &g_TexturePageSRV[srvSlot]);
     g_TexturePageWidth[srvSlot] = 256;
     g_TexturePageHeight[srvSlot] = height;

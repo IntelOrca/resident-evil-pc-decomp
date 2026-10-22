@@ -1,5 +1,7 @@
 #include "core/TitleFont.h"
 
+#include "core/Util.h"
+
 #include <cstring>
 
 namespace re1 {
@@ -18,6 +20,7 @@ struct Glyph {
 const Glyph kGlyphs[] = {
 #include "core/TitleFontGlyphs.inc"
 };
+
 
 }  // namespace
 

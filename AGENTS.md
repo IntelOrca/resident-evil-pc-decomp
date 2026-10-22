@@ -37,6 +37,30 @@ original's quirks are preserved rather than cleaned up.
   dresses that character's cutscene NPC (`LoadNpcOutfit`: the outfit's mesh and
   texture on the NPC's own skeleton and animations, as the DC builds its own).
 
+- **WebP backgrounds and HD textures (port-added, no original address).** A
+  `Stage<n>/rc*.webp` stands in for the `.pak` of the same name
+  (`src/game/RoomBackgroundWebp.cpp`; overlay `.webp`, overlay `.pak`, base
+  `.webp`, base `.pak`), at any resolution. Every other texture can be replaced
+  by content hash: `CreateTextureHd` in `src/marni/MarniSystem.cpp` is the one
+  place a finished RGBA8 image becomes a renderer texture, and
+  `src/system/HdTextures.cpp` swaps in `<assets>/HD/<hash>.webp` there (the
+  file may sit one folder down, e.g. `HD/skin/`; the folder is indexed once
+  through `plat_dir_list`)
+  (`[Textures] HdTextures`, `DumpTextures` writes the originals to
+  `HD/dump/`). Callers keep the LOGICAL size and normalise UVs against it, so
+  never read a texture's real size back. Model skins can also be named after
+  their EMD, `HD/<TREE>/ENEMY/EM1010.webp` (TREE = the folder the model was
+  read from): `LoadEntityEMD` keys the PSXTexture bank, `VTable_CreateTextureHandle`
+  looks the key up. The decoder is the vendored
+  `src/third_party/simplewebp.h`. See `docs/HD_TEXTURES.md`.
+  With HD on, text is drawn in real fonts from the same folder
+  (`src/game/HdText.h`): `TITLEFNT.TTF` (Archivo Black) for the title menu and
+  the title sheets' option art (`saturn_title_load_sheet`), `FONTUS.TTF` /
+  `FONT.TTF` (Archivo Narrow) for `PrintText8x8` and the copyright line,
+  `FONTUS_14.TTF` / `FONT_14.TTF` (Libertinus Serif / M PLUS 2) for every
+  8x14 cell `AddTintSprite` draws. The 8x8 text keeps each word's cell span:
+  callers align by character cells.
+
 ## Project goal
 
 The USA release is no longer the end of the project. The goal now is to **add
@@ -135,7 +159,10 @@ of guessed. Run them from the repo root.
 
 **Asset and file inspection**
 - `dump_tim.py` — parse a PSX TIM and write a viewable PPM.
+- `gen_hd_pack_table.py` — pair the backgrounds and masks of the Classic REbirth HD packs with the game's own `Stage*/RC*.pak` / `Objspr/*.pak` by picture (mutual closest match under a threshold) and emit the migrator's `core/HdPackTable.inc`; it also pairs the packs' per-palette model skins with `Enemy/*.EMD` (Classic REbirth's CRC first, then by picture over the half each palette is drawn from), which the importer joins into the named `HD/<TREE>/Enemy/EMxxxx.webp`; the `Data/` textures the game names after their file (and the projector slides, `Data/SLIDE/<NN>`); with `--jpn <JPN tree>`, the files only the Japanese tree has (the file reader's `Item_m2/FILEI*` backdrops); and, with `--dc <DC overlay folder>`, the Seamless HD Project's `bio1dc` set against the DC overlay (backgrounds, and the masks kept in the arrange room files as `ROOMxxxx_MASK<cam>`). Needs an ORIGINAL (not WebP-migrated) USA tree, the pack folders, numpy and ffmpeg.
 - `gen_title_font.py` — cut the title-option typeface (A-Z; nine letters hand-drawn) out of the DC `BT367OAB.TIM` into a BMFont atlas and the migrator's `TitleFontGlyphs.inc`. The migrator's PC tab writes it into the base tree as `<USA|JPN>/Data/TITLEFNT.BIN`; `src/game/saturn/SaturnTitle.cpp` turns it into the title menu's text strips for every mode (NEW GAME / LOAD GAME / EXTRA > BATTLE GAME / BACK / OPTIONS).
+- `gen_hd_fonts.py` — the HD fonts, both Omnibus-Type under SIL OFL 1.1 and unmodified in `tools/asset_migrator/fonts/`: Archivo Black (`HD/<USA|JPN>/Data/TITLEFNT.TTF`: the title menu, PRESS START, the DC's STANDARD/TRAINING/ADVANCED) and Archivo Narrow SemiBold (`HD/USA/Data/FONTUS.TTF`, `HD/JPN/Data/FONT.TTF`: the 8x8 font and the title's copyright); and, as subsets it makes with `--subset`, Libertinus Serif SemiBold (`FONTUS_14.TTF`) and M PLUS 2 SemiBold (`FONT_14.TTF`, instanced from the variable font) for the 8x14 game text, drawn with the sheet's outline colour. Checked (TrueType, not variable, the characters each needs, licence in its name table) and embedded as the migrator's `core/HdFontTitle.inc` / `core/HdFontText.inc` (`core/HdFonts.h` writes them). The game draws them through `src/game/HdText.h` (vendored `src/third_party/stb_truetype.h`); docs/HD_TEXTURES.md "HD fonts". `--check` exits 1 when an `.inc` is stale.
+- `gen_title_font_outlines.py` — the same 26 letters as hand-drawn vector outlines on the bitmap's grid, checked against it pixel by pixel, written as `assets/fonts/title_font.ttf` / `.svg`. No longer part of a migration (they were `TITLEFNT.VEC`); the `.ttf` can be copied over `TITLEFNT.TTF` to put them on the HD menu instead of Archivo Black. Re-run it after any glyph change in `gen_title_font.py`.
 - `dump_ivm.py` — parse an `.IVM` item view (TIM + TMD), render its texture page to a PNG and print both headers.
 - `dump_item_pix.py` — render rows of an item sprite sheet (`ITEM_ALL.PIX` / `Item_all_dc.pix`) through `STATUS.TIM`'s palette as a PNG grid.
 - `dump_esp_sprite.py` — decode a sprite region of an effspr TIM (pixels + CLUT, with the STP bit).
@@ -173,7 +200,10 @@ of guessed. Run them from the repo root.
 player-facing asset import: a PC tab (a USA/JPN tree from a folder or a disc
 image, optional AVI→MP4) and a Director's Cut tab (a PS1 image only, so the
 `.STR` CD-XA audio survives; builds the `DC/` overlay, `.BSS`→`.pak`
-backgrounds and `.STR`→`.mp4`) and a Sega Saturn tab (builds `SATURN/`: the Tick / Zombie Wesker models converted to PC EMDs and the 15 decoded Battle Game arenas; optionally `MOVIE.CPK`'s 28 FILM movies -> `SATURN/Movie/*.mp4`, `re1am_selftest satcpk` lists them). It replaces the old `scripts/build_dc_assets.py`
+backgrounds and `.STR`→`.mp4`) and a Sega Saturn tab (builds `SATURN/`: the Tick / Zombie Wesker models converted to PC EMDs and the 15 decoded Battle Game arenas; optionally `MOVIE.CPK`'s 28 FILM movies -> `SATURN/Movie/*.mp4`, `re1am_selftest satcpk` lists them). A window-wide **Room backgrounds** option leaves every tab's `Stage*/RC*.pak`
+as `.pak`, or converts them to lossless / lossy WebP once the migration is done
+(`core/BackgroundWebp.cpp`: ffmpeg's `libwebp` encodes, the game's own decoder
+reads each file back; `re1am_selftest bgwebp <tree>` runs the pass alone). An **HD Pack** tab imports one `hires` folder of the Classic REbirth packs (Seamless HD Project, RE-ENHANCE) at a time - *Pack is for* Original game (`hires`) or Director's Cut (SHDP `bio1dc\hires`, into `HD/DC/`) - under the port's names: backgrounds and masks through a picture-matched table (`core/HdPackTable.inc`, regenerate with `tools/gen_hd_pack_table.py`), character/enemy skins through the same table into `HD/<TREE>/Enemy/<EMD>.webp` (the two palette pictures joined), everything else by matching the pack against the game's own dump (`HD/dump`, `[Textures] DumpTextures=1`); the packs' own CRC names are mostly not reproducible, see `docs/HD_TEXTURES.md`. It replaces the old `scripts/build_dc_assets.py`
 and is **not** part of the game build. Its core is Qt-free C++17, so
 `re1am_selftest.exe` runs it headlessly; see `tools/asset_migrator/README.md`.
 

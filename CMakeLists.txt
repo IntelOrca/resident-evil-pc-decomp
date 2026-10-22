@@ -33,6 +33,8 @@ set(RE1_SOURCES
     src/system/AssetPath.cpp
     src/system/AudioFile.cpp
     src/system/PngImage.cpp
+    src/system/WebpImage.cpp
+    src/system/HdTextures.cpp
     src/system/ConfigFile.cpp
 
     src/marni/MarniBits.cpp
@@ -76,9 +78,11 @@ set(RE1_SOURCES
     src/game/OptionsMenu.cpp
     src/game/PathTrail.cpp
     src/game/PlayerAnimations.cpp
+    src/game/HdText.cpp
     src/game/PrintText.cpp
     src/game/Rendering.cpp
     src/game/Room.cpp
+    src/game/RoomBackgroundWebp.cpp
     src/game/RoomCollision.cpp
     src/game/RoomEvents.cpp
     src/game/RoomInit.cpp
@@ -253,7 +257,11 @@ re1_link_32bit(swresample RE1_SWRESAMPLE_LIB)
 # only add a link-time requirement the lib32 packages need not satisfy (Arch's
 # lib32-mesa ships no unversioned libGL.so). The GL runtime the context needs
 # is dlopen'd by SDL at startup, not at link time.
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
 target_link_libraries(residentevil PRIVATE
     ${RE1_SDL2_LIB}
     ${RE1_AVFORMAT_LIB} ${RE1_AVCODEC_LIB} ${RE1_AVUTIL_LIB} ${RE1_SWRESAMPLE_LIB}
+    # std::thread: the HD texture decode worker (src/system/HdTextures.cpp).
+    Threads::Threads
     m)

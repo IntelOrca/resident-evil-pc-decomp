@@ -46,6 +46,7 @@
 #include "TmdRenderer.h"
 #include "FileLoader.h"
 #include "saturn/SaturnBattle.h"
+#include "../system/HdTextures.h"   // door texture names (port-only)
 
 // --- forward declarations of port-side helpers ---------------------------------
 extern int  PSXObject_Store(CMarniDirect3DTMD* self, int* tmdHdr, int objIndex,
@@ -168,6 +169,7 @@ static unsigned char* g_doorTimPtr = NULL;      // relocated dword2 - PSX TIM
 static unsigned char g_doorTexPage[0x1b60];
 static int  g_doorTexCreated = 0;       // DAT_00920b00
 static void* g_doorTexSrc = NULL;       // DAT_00920b24 - door TIM pointer
+static char  s_doorHdKey[160] = "";     // port-only: the .dor's HD texture name
 
 // ============================================================================
 // Command entries (0x00be0c10) - 8 x 0x38. Each runs a script; the dispatch in
@@ -346,6 +348,11 @@ static void DoorCreateTexturePage(void)
     VideoDriver_ClearState348(g_doorTexPage, g_pMarniDirect3D);
     LoadPSXImage((PSXTexture*)g_doorTexPage, g_doorTexSrc, 1);
 
+    // Port-only: the page holds the .dor's TIM; the renderer finds an HD
+    // picture for it by that file's name (MarniSystem.cpp, HdModelKeyFor).
+    HdTextures_SetOwnerKey(g_doorTexPage, ((CMarniBits*)g_doorTexPage)->m_pPixelData,
+                           s_doorHdKey);
+
     // 0x00484856: overwrite every CLUT descriptor's material key with a fixed
     // constant set (0, 0x1FF, 0x140, 0x100). Every shipped .dor primitive
     // packet encodes clut position 0x7FC0 (= VRAM 0,511) and page low bits
@@ -384,11 +391,26 @@ static void DoorRequestTexture(void* timPtr)
 // the texture page creation. Called by room_transition_load BEFORE the
 // animation task is spawned.
 // ============================================================================
+// Port-only: queue door type `type`'s HD picture for decoding (HdTextures.h).
+// door_set calls it while the room loads, so the picture is ready by the time
+// the player opens that door instead of stalling the door's start.
+void Door_HdPrefetch(unsigned int type)
+{
+    if (type >= 0x22 || !HdTextures_Active()) return;
+    char key[160];
+    HdTextures_PrefetchNamed(HdTextures_KeyForPath(g_doorFileNameTable[type], key, sizeof(key)));
+}
+
 static void DoorLoadData(void)
 {
+    HdDeferScope hdDefer;               // port-only: no decode stalls the door's start
     unsigned int type = DOOR_BYTEVAR2;
     if (type >= 0x22) type = 0;         // guard: the original indexes without a bound
     LoadFile(g_doorFileNameTable[type], g_doorFileData, 0x20);
+    
+    // Port-only: the door's texture is named after its file
+    // (HD/<TREE>/item_m1/door00.webp, HdTextures.h).
+    HdTextures_KeyForPath(g_doorFileNameTable[type], s_doorHdKey, sizeof(s_doorHdKey));
 
     // TMD header / TIM pointers come from the file header (dword1/dword2) -
     // they differ per door file.
@@ -1087,6 +1109,8 @@ static void DoorComposeChain(ScaMatrixData* node, MATRIX* out)
     CompMatrix(&g_RoomCameraData, &node->worldMatrix, out);
 }
 
+static void DoorAnimLoopBody(int& holdCounter);
+
 // ============================================================================
 // DoorAnimLoop (0x00444540) - the animation main loop
 // ============================================================================
@@ -1095,6 +1119,27 @@ static void DoorAnimLoop(void)
     g_doorPhase = 0;
     g_doorFrameCount = 0;
     int holdCounter = 0;
+    DoorAnimLoopBody(holdCounter);
+
+    // Port-only: the door has finished but the new room's HD pictures are
+    // still decoding - hold on black until they are in, the way the
+    // PlayStation held the door until the CD read was done.
+    while (MarniHd_DeferredPending()) {
+        g_rect.textureId = 0;
+        g_rect.r = 0;
+        g_rect.g = 0;
+        g_rect.b = 0;
+        g_rect.x = -160;
+        g_rect.y = -120;
+        g_rect.w = 320;
+        g_rect.h = 240;
+        draw_rect(&g_rect, 0, 0);
+        Task_sleep(1);
+    }
+}
+
+static void DoorAnimLoopBody(int& holdCounter)
+{
 
     while ((g_doorState & 1) != 0) {
 
@@ -1175,7 +1220,10 @@ static void DoorAnimLoop(void)
         }
 
         // Holding any d-pad/circle button skips the animation (after frame 10).
-        if (((g_PlayerPadHeld & 0xC0) != 0) && (g_doorFrameCount > 10)) {
+        // Port-only: not while the new room's HD pictures are still decoding -
+        // the door is the load screen they decode behind.
+        if (((g_PlayerPadHeld & 0xC0) != 0) && (g_doorFrameCount > 10) &&
+            !MarniHd_DeferredPending()) {
             g_SpriteAsyncFlag = 1;
             g_doorState = 0;
         }
@@ -1428,6 +1476,10 @@ void room_transition_load(void)
 
     g_roomTransitionBusy   = 1;
     g_AttractModeIdleTimer = 1;
+
+    // Port-only: the new room's HD pictures decode behind the door animation
+    // instead of stalling the load (HdTextures.h, deferred uploads).
+    HdDeferScope hdDefer;
 
     // Sega Saturn Battle Game: the run clock stops for the transition (GAME5
     // 0x0602DBDC, the first thing its transition routine does) and starts again

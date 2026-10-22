@@ -5,6 +5,7 @@
 #include "core/DiscImage.h"
 #include "core/Jimaku.h"
 #include "core/Ps1Audio.h"
+#include "core/HdFonts.h"
 #include "core/TitleFont.h"
 #include "core/Util.h"
 #include "core/Video.h"
@@ -251,7 +252,8 @@ int copyBonusOutfits(const std::string& targetRoot, const std::string& sourceEne
 bool migratePcAssets(const PcMigrationOptions& opts, const Progress& progress,
                      std::string* error) {
     progress.info("PC asset migration");
-    if (opts.sourcePath.empty() && opts.ps1ImagePath.empty()) {
+    const bool webp = opts.backgroundFormat != BackgroundFormat::Pak;
+    if (opts.sourcePath.empty() && opts.ps1ImagePath.empty() && !webp) {
         if (error) *error = "no source selected";
         return false;
     }
@@ -270,7 +272,9 @@ bool migratePcAssets(const PcMigrationOptions& opts, const Progress& progress,
     // the restored .wav), then the copy puts the originals back.
     if (!opts.sourcePath.empty()) removePs1Audio(destRoot, progress);
 
-    if (opts.sourcePath.empty()) {
+    if (opts.sourcePath.empty() && opts.ps1ImagePath.empty()) {
+        progress.info("no source: converting the existing tree's backgrounds");
+    } else if (opts.sourcePath.empty()) {
         progress.info("no PC source: adding the PS1 assets to the existing tree");
     } else if (opts.sourceIsImage) {
         progress.info("source: " + opts.sourcePath + " (disc image)");
@@ -301,12 +305,24 @@ bool migratePcAssets(const PcMigrationOptions& opts, const Progress& progress,
     // Carried by the tool, not read from any disc; written on every run so a
     // tree migrated before the font moved here gets it too.
     if (!writeTitleFont(destRoot, progress, error)) return false;
+    // The HD fonts belong to the HD folder; only refreshed here when there is
+    // one already, since creating HD/ switches HD textures on.
+    if (isDirectory(joinPath(opts.targetRoot, "HD")) &&
+        !writeHdFonts(opts.targetRoot, opts.version, progress, error))
+        return false;
 
     // After the AVI conversion, so the "tree already has it" check sees the
     // PC movies' .mp4 as well.
     if (!opts.ps1ImagePath.empty() &&
         !migratePs1Supplement(opts, destRoot, progress, error))
         return false;
+
+    // Last, on the finished tree: a PC copy has just put every .pak back.
+    BackgroundFormatOptions bg;
+    bg.format = opts.backgroundFormat;
+    bg.quality = opts.webpQuality;
+    bg.ffmpegPath = opts.ffmpegPath;
+    if (!applyBackgroundFormat(destRoot, bg, progress, error)) return false;
 
     progress.info("done: " + destRoot);
     return true;
@@ -436,6 +452,16 @@ bool migrateDcAssets(const DcMigrationOptions& opts, const Progress& progress,
             cleanup();
             return false;
         }
+    }
+
+    // After the verify, which reads the .pak files the build just wrote.
+    BackgroundFormatOptions bg;
+    bg.format = opts.backgroundFormat;
+    bg.quality = opts.webpQuality;
+    bg.ffmpegPath = opts.ffmpegPath;
+    if (!applyBackgroundFormat(overlay, bg, progress, error)) {
+        cleanup();
+        return false;
     }
 
     cleanup();

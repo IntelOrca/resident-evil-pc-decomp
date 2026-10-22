@@ -88,6 +88,7 @@ jobs:
           Copy-Item "config.ini.template" "stage/$name/config.ini"
           Copy-Item "README.md" "stage/$name"
           Copy-Item "LICENSE" "stage/$name"
+          Copy-Item "THIRD_PARTY_NOTICES.txt" "stage/$name"
           Compress-Archive -Path "stage/$name/*" -DestinationPath "$name.zip"
           "zip=$name.zip" >> $env:GITHUB_OUTPUT
           "name=$name" >> $env:GITHUB_OUTPUT
@@ -182,6 +183,7 @@ jobs:
           Copy-Item "tools/asset_migrator/build/re1am_selftest.exe" $out
           Copy-Item "tools/asset_migrator/README.md" $out
           Copy-Item "LICENSE" $out
+          Copy-Item "tools/asset_migrator/THIRD_PARTY_NOTICES.txt" $out
           Compress-Archive -Path "$out/*" -DestinationPath "$name.zip"
           "zip=$name.zip" >> $env:GITHUB_OUTPUT
           "name=$name" >> $env:GITHUB_OUTPUT
@@ -249,6 +251,7 @@ jobs:
           # package_linux.sh writes no config.ini: ship the template as the
           # initial settings file, same as the Windows package.
           cp config.ini.template "$bundle/config.ini"
+          cp THIRD_PARTY_NOTICES.txt "$bundle/"
           name="$(basename "$bundle")"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           echo "archive=dist/$name.tar.gz" >> "$GITHUB_OUTPUT"

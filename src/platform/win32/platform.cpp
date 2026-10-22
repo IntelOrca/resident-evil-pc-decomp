@@ -11,7 +11,9 @@
 #endif
 #include <windows.h>
 #include <mmsystem.h>
+#include <stdio.h>    // _snprintf_s for plat_dir_list
 #include <stdlib.h>   // malloc/free for plat_file_read_all
+#include <string.h>
 
 // Cached system wave-out volume, owned by Globals.cpp. Declared here rather
 // than pulled in through Globals.h: that header redefines OutputDebugStringA
@@ -151,6 +153,21 @@ BOOL plat_mkdir(const char* path)
 {
     if (CreateDirectoryA(path, NULL)) return TRUE;
     return (GetLastError() == ERROR_ALREADY_EXISTS) ? TRUE : FALSE;
+}
+
+BOOL plat_dir_list(const char* path, PlatDirVisit visit, void* user)
+{
+    char pattern[MAX_PATH];
+    if (_snprintf_s(pattern, sizeof(pattern), _TRUNCATE, "%s\\*", path) < 0) return FALSE;
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pattern, &fd);
+    if (h == INVALID_HANDLE_VALUE) return FALSE;
+    do {
+        if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
+        visit(fd.cFileName, (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? TRUE : FALSE, user);
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+    return TRUE;
 }
 
 BOOL plat_file_write(const char* path, const void* data, size_t size)

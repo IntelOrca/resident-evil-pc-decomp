@@ -23,6 +23,8 @@ extern DWORD DAT_004d2bf4;                     // 0x004d2bf4 - TMD processing fl
 extern void SetAnimSlot(AnimSlot* slots, int slotPtr, int index);         // TmdAnimation.cpp
 extern unsigned int* CreateAnimObject(int slotPtr, unsigned int* param2); // TmdAnimation.cpp
 extern DWORD g_tmdAsyncData;                   // 0x008fc424 - TMD async data
+extern void TmdAsync_SetHdSource(const void* tim, const char* key,
+                                 bool perPalette = false);           // TmdAnimation.cpp (port)
 extern DWORD DAT_004c1a2c;                     // 0x004c1a2c
 extern DWORD DAT_00ae9f04;                     // 0x00ae9f04
 extern BYTE  g_textureQueueData[40];           // 0x00d22740
@@ -511,10 +513,12 @@ void InitScaMatrix(int param1, ScaMatrixData* scaData)
 // modelled around them.
 //
 // npcBase/npcSize: the NPC file as LoadEntityEMD read it. *modelPtr and
-// g_loadDataDestPointer are moved onto the outfit's mesh and texture. On any
-// failure the NPC is left exactly as loaded.
+// g_loadDataDestPointer are moved onto the outfit's mesh and texture, and
+// hdKey (hdKeySize bytes) onto the outfit's file, whose texture it now is. On
+// any failure the NPC is left exactly as loaded.
 // ============================================================================
-static void LoadNpcOutfit(const BonusModel* outfit, int npcBase, unsigned int npcSize, int* modelPtr)
+static void LoadNpcOutfit(const BonusModel* outfit, int npcBase, unsigned int npcSize, int* modelPtr,
+                          char* hdKey, size_t hdKeySize)
 {
     const unsigned int npcEnd = npcSize & 0xFFFFFFFC;
     const unsigned int* npcDir = (const unsigned int*)(npcBase + npcEnd - 0x14);
@@ -534,6 +538,8 @@ static void LoadNpcOutfit(const BonusModel* outfit, int npcBase, unsigned int np
     strncpy(savedOverlay, GetAssetModeName(), sizeof(savedOverlay) - 1);
     SetAssetMode(outfit->overlay);
     const unsigned int size = LoadFile(FILE_PATH, src, 32);
+    char outfitKey[128];
+    if (AssetSourceKey(FILE_PATH, outfitKey, sizeof(outfitKey)) == NULL) outfitKey[0] = '\0';
     SetAssetMode(savedOverlay);
     if (size == 0xFFFFFFFF || size < 0x20) {
         return;
@@ -564,6 +570,10 @@ static void LoadNpcOutfit(const BonusModel* outfit, int npcBase, unsigned int np
     memmove(dst, src + mesh, end - 0x14 - mesh);
     *modelPtr = (int)dst;
     g_loadDataDestPointer = dst + (tim - mesh);
+    if (hdKey != NULL && hdKeySize > 0) {
+        strncpy(hdKey, outfitKey, hdKeySize - 1);
+        hdKey[hdKeySize - 1] = '\0';
+    }
 }
 
 // ============================================================================
@@ -673,6 +683,10 @@ void LoadEntityEMD(Entity* em, unsigned char entity_id)
         SetAssetMode(loadOverlay);
     }
     unsigned int fileSize = LoadFile(FILE_PATH, g_loadDataDestPointer, 32);
+    // Port: the file's name for an HD skin (HdTextures.h), taken while the
+    // overlay the load used is still set, so it names the tree it came from.
+    char hdKey[128];
+    if (AssetSourceKey(FILE_PATH, hdKey, sizeof(hdKey)) == NULL) hdKey[0] = '\0';
     if (loadOverlay != NULL) SetAssetMode(savedOverlay);
     int data_pointer = (int)g_loadDataDestPointer;
 
@@ -701,7 +715,7 @@ void LoadEntityEMD(Entity* em, unsigned char entity_id)
     const unsigned int emdDir[4] = { puVar2[0], puVar2[1], puVar2[2], puVar2[3] };
     int texDataPtr = (emdDir[3] & 0xFFFFFFFC) + data_pointer;
     if (npcOutfit) {
-        LoadNpcOutfit(&npcOutfitModel, data_pointer, fileSize, &texDataPtr);
+        LoadNpcOutfit(&npcOutfitModel, data_pointer, fileSize, &texDataPtr, hdKey, sizeof(hdKey));
     }
 
     unsigned char entityType = ENTITY->id;
@@ -728,10 +742,14 @@ void LoadEntityEMD(Entity* em, unsigned char entity_id)
 
     // Saturn Battle Game: arena 15's models are loaded gold (GAME5 0x0603BD0A).
     if (g_bSaturnMode && g_saturnBattleActive) {
-        saturn_battle_tint_model_tim((unsigned char*)g_loadDataDestPointer);
+        if (saturn_battle_tint_model_tim((unsigned char*)g_loadDataDestPointer)) {
+            hdKey[0] = '\0';        // an HD skin would undo the gold
+        }
     }
 
+    TmdAsync_SetHdSource(g_loadDataDestPointer, hdKey);
     ProcessTmdAsync((unsigned int)g_loadDataDestPointer);
+    TmdAsync_SetHdSource(NULL, NULL);
 
     if ((DAT_004c1a2c >> (entityType & 0x1f) & 1) != 0) {
         QueueTextureForProcessing(bVar6, entityType);

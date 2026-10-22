@@ -382,41 +382,153 @@ int GetAssetVersion(void)
     return s_assetIsJpn;
 }
 
+const char* AssetSiblingPath(const char* folder, const char* relPath,
+                             char* out, size_t outSize)
+{
+    if (folder == NULL || out == NULL || outSize == 0) return NULL;
+    char root[260];
+    ComposeModeRoot(folder, root, sizeof(root));
+    if (sprintf_s(out, outSize, "%s%s", root, relPath != NULL ? relPath : "") < 0) {
+        return NULL;
+    }
+    return out;
+}
+
+static int ProbeFile(const char* candidate)
+{
+    char probeBuf[300];
+    FILE* fp = fopen(plat_normalize_path(candidate, probeBuf, sizeof(probeBuf)), "rb");
+    if (fp == NULL) return 0;
+    fclose(fp);
+    return 1;
+}
+
+// Length of the recognized root form `path` starts with, 0 when it is not an
+// asset-rooted path. Both compile-time variants are always matched so a path
+// built against either the debug ("assets") or retail root is remapped, e.g.
+// the FMV table which hardcodes the retail ".\usa\" form. On non-Windows the
+// configured roots are themselves in the list; the substitution is idempotent
+// for them (root -> same root).
+static size_t MatchRootForm(const char* path)
+{
+#if !defined(_WIN32)
+    static const char* kForms[] = { "./assets/USA/", "./assets/JPN/",
+                                    ".\\usa\\", ".\\jpn\\" };
+#else
+    // The JPN forms belong here too: GAME_DATA_ROOT_JPN paths (the JPN-only
+    // document art in MainMenu.cpp) are compiled against them, and without a
+    // match ResolveAssetRoot returns early - so those loads skipped the overlay
+    // probe entirely on Windows, while the same paths resolved on Linux,
+    // whose list always carried all four.
+    static const char* kForms[] = { ".\\assets\\USA\\", ".\\usa\\",
+                                    ".\\assets\\JPN\\", ".\\jpn\\" };
+#endif
+    size_t matchLen = 0;
+    for (int i = 0; i < 4; i++) {
+        size_t len = strlen(kForms[i]);
+        if (len > matchLen && strncmp(path, kForms[i], len) == 0) {
+            matchLen = len;
+        }
+    }
+    return matchLen;
+}
+
+int ResolveAssetAlternate(const char* path, const char* altExt,
+                          char* out, size_t outSize)
+{
+    if (path == NULL || altExt == NULL || out == NULL || outSize == 0) return 0;
+
+    const size_t matchLen = MatchRootForm(path);
+    if (matchLen == 0) return 0;
+    const char* tail = path + matchLen;
+
+    // The tail with its extension swapped for altExt.
+    char altTail[260];
+    const char* dot = strrchr(tail, '.');
+    const size_t stem = (dot != NULL) ? (size_t)(dot - tail) : strlen(tail);
+    if (stem + strlen(altExt) + 1 > sizeof(altTail)) return 0;
+    memcpy(altTail, tail, stem);
+    strcpy(altTail + stem, altExt);
+
+    char candidate[300];
+    if (s_overlayRoot != NULL) {
+        if (sprintf_s(candidate, sizeof(candidate), "%s%s", s_overlayRoot, altTail) >= 0 &&
+            ProbeFile(candidate)) {
+            return sprintf_s(out, outSize, "%s", candidate) >= 0;
+        }
+        // The overlay's own file in the original format outranks an alternate
+        // in the base tree: the overlay is the newer content, whatever its
+        // encoding.
+        if (sprintf_s(candidate, sizeof(candidate), "%s%s", s_overlayRoot, tail) >= 0 &&
+            ProbeFile(candidate)) {
+            return 0;
+        }
+    }
+    if (sprintf_s(candidate, sizeof(candidate), "%s%s", s_assetRoot, altTail) >= 0 &&
+        ProbeFile(candidate)) {
+        return sprintf_s(out, outSize, "%s", candidate) >= 0;
+    }
+    return 0;
+}
+
+const char* AssetSourceKey(const char* path, char* out, size_t outSize)
+{
+    return AssetSourceKeyAlt(path, NULL, out, outSize);
+}
+
+const char* AssetSourceKeyAlt(const char* path, const char* altExt,
+                              char* out, size_t outSize)
+{
+    if (path == NULL || out == NULL || outSize == 0) return NULL;
+    const size_t matchLen = MatchRootForm(path);
+    if (matchLen == 0) return NULL;
+    const char* tail = path + matchLen;
+
+    // The same decision ResolveAssetRoot (and, with altExt,
+    // ResolveAssetAlternate) makes: the overlay when it carries the file, the
+    // base tree otherwise.
+    const char* tree = s_assetIsJpn ? "JPN" : "USA";
+    if (s_overlayRoot != NULL) {
+        char candidate[300];
+        bool there = sprintf_s(candidate, sizeof(candidate), "%s%s", s_overlayRoot, tail) >= 0 &&
+                     ProbeFile(candidate);
+        if (!there && altExt != NULL) {
+            const char* dot = strrchr(tail, '.');
+            const int stem = (int)((dot != NULL) ? (size_t)(dot - tail) : strlen(tail));
+            there = sprintf_s(candidate, sizeof(candidate), "%s%.*s%s", s_overlayRoot, stem,
+                              tail, altExt) >= 0 &&
+                    ProbeFile(candidate);
+        }
+        if (there) {
+            tree = (s_assetIsJpn && _stricmp(s_modeName, "SATURN") == 0) ? "SATURN_JPN"
+                                                                          : s_modeName;
+        }
+    }
+
+    size_t n = 0;
+    for (const char* s = tree; *s != '\0'; s++) {
+        if (n + 1 >= outSize) return NULL;
+        out[n++] = (*s >= 'a' && *s <= 'z') ? (char)(*s - 32) : *s;
+    }
+    if (n + 1 >= outSize) return NULL;
+    out[n++] = '/';
+    const char* dot = strrchr(tail, '.');
+    const char* stop = (dot != NULL) ? dot : tail + strlen(tail);
+    for (const char* s = tail; s < stop; s++) {
+        if (n + 1 >= outSize) return NULL;
+        out[n++] = (*s == '\\') ? '/' : *s;
+    }
+    out[n] = '\0';
+    return out;
+}
+
 const char* ResolveAssetRoot(const char* path, char* out, size_t outSize)
 {
     if (path == NULL) return NULL;
     if (out == NULL || outSize == 0) return path;
 
-    // Recognized root forms. Both compile-time variants are always matched so
-    // a path built against either the debug ("assets") or retail root is
-    // remapped, e.g. the FMV table which hardcodes the retail ".\usa\" form.
-    // On non-Windows the configured roots are themselves in the list; the
-    // substitution is idempotent for them (root -> same root).
-#if !defined(_WIN32)
-    static const char* kForms[] = { "./assets/USA/", "./assets/JPN/",
-                                    ".\\usa\\", ".\\jpn\\" };
-    const int kFormCount = 4;
-#else
-    // The JPN forms belong here too: GAME_DATA_ROOT_JPN paths (the JPN-only
-    // document art in MainMenu.cpp) are compiled against them, and without a
-    // match this function returns early - so those loads skipped the overlay
-    // probe entirely on Windows, while the same paths resolved on Linux,
-    // whose list always carried all four.
-    static const char* kForms[] = { ".\\assets\\USA\\", ".\\usa\\",
-                                    ".\\assets\\JPN\\", ".\\jpn\\" };
-    const int kFormCount = 4;
-#endif
-
-    const char* match = NULL;
-    size_t matchLen = 0;
-    for (int i = 0; i < kFormCount; i++) {
-        size_t len = strlen(kForms[i]);
-        if (len > matchLen && strncmp(path, kForms[i], len) == 0) {
-            matchLen = len;
-            match = kForms[i];
-        }
-    }
-    if (match == NULL) return path; // Not an asset-rooted path.
+    const size_t matchLen = MatchRootForm(path);
+    if (matchLen == 0) return path; // Not an asset-rooted path.
 
     const char* tail = path + matchLen;
 

@@ -352,7 +352,11 @@ void init_title_screen(void)
     g_titleTexturePageData[0] = 8;
     g_TextureCurrentPage = 26;
     g_TextureBankID = 8;
-    LoadTexturePage(g_TimImageBuffer__bitmap, 8, 0, 12, 4, 0, 0, 0);
+    // LoadTexturePage, with the sheet's text in the HD fonts when HD is on.
+    saturn_title_load_sheet(g_bDcMode ? SATURN_TITLE_SHEET_DC_MAIN
+                            : (!g_bPadConnected ? SATURN_TITLE_SHEET_USA_PRESS
+                                                : SATURN_TITLE_SHEET_USA_START),
+                            g_TimImageBuffer__bitmap, 8, 0, 12, 4, 0, 0, 0);
 
     g_titleTexturePageData[1] = g_TextureBankID;
     g_titleLoopFlag = 1;
@@ -366,7 +370,8 @@ void init_title_screen(void)
         static const int kTitlePageB[4] = { 3, 4, 5, 6 };
         dc_title_build_page(g_bgPakLoadBuffer, kTitlePageB, 4, 64, 0, 3,
                             g_TimImageBuffer__bitmap);
-        LoadTexturePage(g_TimImageBuffer__bitmap, 9, 0, 13, 0, 0, 0, 0);
+        saturn_title_load_sheet(SATURN_TITLE_SHEET_DC_DIFFICULTY,
+                                g_TimImageBuffer__bitmap, 9, 0, 13, 0, 0, 0, 0);
         g_titleTexturePageData[3] = 9;
         g_titleTexturePageData[4] = 9;
         g_titleTexturePageData[5] = 9;
@@ -380,8 +385,7 @@ void init_title_screen(void)
     if (saturn_title_font_load() &&
         saturn_title_build_strips(g_TimImageBuffer__bitmap, kTitleStrips,
                                   TITLE_STRIP_COUNT) != 0) {
-        LoadTexturePage(g_TimImageBuffer__bitmap, TITLE_MENU_PAGE, 0,
-                        TITLE_MENU_SLOT, 0, 0, 0, 0);
+        saturn_title_load_strips(g_TimImageBuffer__bitmap, TITLE_MENU_PAGE, TITLE_MENU_SLOT);
         s_saturnFontMenu = 1;
     } else if (saturn_battle_offered()) {
         build_battle_game_page();
@@ -511,20 +515,17 @@ static const TitleTextPosData g_titleTextPosTableDc[8] = {
 // The lines stand where the original art has them. The USA cell is drawn at
 // screenY 8 + 38 with NEW GAME one row down and LOAD GAME 18 rows under it, and
 // that is what a menu of up to three lines keeps. A fourth line does not fit at
-// that pitch above the copyright strip, so four lines close up to 14 rows and
-// start 4 rows higher.
+// that pitch where the art's copyright line was, so four lines close up to 14
+// rows and start 4 rows higher.
 //
-// The copyright line is part of each option cell in the USA art (rows 131..139
-// of the sheet, straight under LOAD GAME); here it is drawn from that sheet as a
-// sprite of its own, below the last line. The Director's Cut's cells are whole
-// 256x80 pictures of their own and have no such strip to borrow.
+// The copyright line is shown with PRESS START BUTTON only (it is part of that
+// cell of the art). The USA art repeats it under every option frame (rows
+// 131..139 and 223..231 of the sheet), but the menu draws only its own strips,
+// so the title options have none - in every mode, with or without HD.
 // ============================================================================
 #define TITLE_MENU_SCREEN_Y     (38 + 8 + 1)
 #define TITLE_MENU_PITCH        18
 #define TITLE_MENU_PITCH_TIGHT  14
-#define TITLE_COPYRIGHT_SRC_Y   131
-#define TITLE_COPYRIGHT_ROWS    9
-#define TITLE_COPYRIGHT_Y       (38 + 8 + 55)
 
 static void title_draw_strip(unsigned char brightness, int texturePage, int slot,
                              int texV, int height, int screenY)
@@ -575,11 +576,6 @@ static void title_draw_font_menu(unsigned char brightness, unsigned char selecti
                          (rows[i] == selectionId ? SATURN_TITLE_STRIP_H : 0);
         title_draw_strip(brightness, TITLE_MENU_PAGE, TITLE_MENU_SLOT, texV,
                          SATURN_TITLE_STRIP_H, top + i * pitch);
-    }
-
-    if (!g_bDcMode) {
-        title_draw_strip(brightness, g_titleTexturePageData[1], 12,
-                         TITLE_COPYRIGHT_SRC_Y, TITLE_COPYRIGHT_ROWS, TITLE_COPYRIGHT_Y);
     }
 }
 

@@ -4,6 +4,7 @@
 #include "Globals.h"
 #include "../system/AssetPath.h"
 #include "saturn/SaturnBattle.h"
+#include "../marni/MarniSystem.h"   // MarniHd_PumpDeferred (port-only)
 
 // 0x00470750 - declared in SpriteRenderer.h; the signature must match that
 // definition exactly (see the stub-overload note on display_room_camera_bg).
@@ -35,6 +36,9 @@ static RectDrawDesc g_LetterboxBarBottom = { 0x60000000, -164,   92, 328,  38, 0
 int main_loop(void)
 {
     SetFrameRateMode(g_bGameActive != 0);
+
+    // Port-only: HD pictures decoded since the last frame take their place.
+    MarniHd_PumpDeferred();
 
     // 0x00428ed1: Initialize game on first run
     if ((char)init_game_flag == 0) {

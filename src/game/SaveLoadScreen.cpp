@@ -12,6 +12,7 @@
 #include "SpriteRenderer.h"
 #include "SFXIds.h"
 #include "PrintText.h"
+#include "HdText.h"      // HdText_SetPrint8x8Size (port-only)
 #include "dc/Items.h"    // lockpick item id (is_lockpick_item)
 #include "saturn/SaturnBattle.h"
 #include <cstdio>
@@ -83,6 +84,10 @@ typedef enum {
 #define OFFSET_COSTUME_VARIANT 0xA01   // 1 byte  (g_bCostumeVariant)
 #define OFFSET_KEY_BACKUP    0xA02   // 128 bytes (g_joyRemapBackupKey)
 #define OFFSET_TIMESTAMP     SAVE_OFFSET_TIMESTAMP   // 4 bytes (port-only, little endian)
+
+// Port-only: the size the HD 8x8 font draws the selected slot's mode +
+// timestamp line at (a fraction of the normal HD size).
+#define SAVE_INFO_HD_TEXT_SIZE 0.7f
 
 // ============================================================================
 // PrintFormattedText encoded data - byte-identical to the original tables at
@@ -1468,7 +1473,10 @@ void LoadSaveGameState(int mode, int flags, int useInkRibbon, int sfxBank, int c
                 SaveScreenDrawBox(20, 203, 280, 20);
                 int px = 20 + (280 - (int)strlen(info) * 8) / 2;
                 sprintf(PRINT_TEXT_BUFFER, "%s", info);
+                // The HD font draws it smaller, towards the box's centre.
+                HdText_SetPrint8x8Size(SAVE_INFO_HD_TEXT_SIZE, HD_TEXT_ANCHOR_CENTRE);
                 PrintText8x8((short)px, 209, 0, 0);       // white for every mode
+                HdText_SetPrint8x8Size(1.0f, HD_TEXT_ANCHOR_LEFT);
             }
         }
 

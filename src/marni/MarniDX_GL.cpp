@@ -69,6 +69,7 @@ struct MarniDX::Impl {
     struct TexSlot {
         GLuint tex = 0;
         int w = 0, h = 0;
+        unsigned int serial = 0;   // port-only: bumped on every release
     } slots[MARNI_MAX_TEXTURES];
 
     void ReleaseSlot(MarniHandle h) {
@@ -76,6 +77,7 @@ struct MarniDX::Impl {
         if (slots[h].tex != 0) glDeleteTextures(1, &slots[h].tex);
         slots[h].tex = 0;
         slots[h].w = slots[h].h = 0;
+        slots[h].serial++;
     }
 
     void ReleaseAll() {
@@ -583,6 +585,27 @@ BOOL MarniDX::UpdateTexturePixels(MarniHandle tex, const void* pixelData,
                     GL_RGBA, GL_UNSIGNED_BYTE, pixelData);
     glBindTexture(GL_TEXTURE_2D, 0);
     return TRUE;
+}
+
+BOOL MarniDX::ReplaceTexture(MarniHandle tex, int width, int height, const void* rgba32)
+{
+    Impl* p = m_pImpl;
+    if (p == nullptr || tex == MARNI_NULL_HANDLE || tex >= MARNI_MAX_TEXTURES) return FALSE;
+    if (p->slots[tex].tex == 0 || rgba32 == nullptr || width <= 0 || height <= 0) return FALSE;
+    glBindTexture(GL_TEXTURE_2D, p->slots[tex].tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, rgba32);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    p->slots[tex].w = width;
+    p->slots[tex].h = height;
+    return TRUE;
+}
+
+unsigned int MarniDX::TextureSerial(MarniHandle tex) const
+{
+    const Impl* p = m_pImpl;
+    if (p == nullptr || tex == MARNI_NULL_HANDLE || tex >= MARNI_MAX_TEXTURES) return 0;
+    return p->slots[tex].serial;
 }
 
 void MarniDX::GetTextureSize(MarniHandle tex, int* outWidth, int* outHeight) const

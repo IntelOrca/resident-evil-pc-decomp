@@ -6,6 +6,7 @@
 #include "../DebugPrint.h"
 #include "../platform/platform.h"
 #include "AssetPath.h"   // SetAssetBase / SetSaveRoot / SetAssetVersion
+#include "HdTextures.h"  // HdTextures_Configure
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -59,7 +60,11 @@ const OwnedKey kGameKeys[] = {
     { "Game",   "SkipUnskippableFmv" },
     { "Game",   "BattleGame" },
     { "Game",   "WesternDifficulty" },
+    { "Textures", "HdTextures" },
 };
+
+// -1 = not chosen in the menu: write what is running.
+int s_hdTexturesPending = -1;
 const int kGameKeyCount = (int)(sizeof(kGameKeys) / sizeof(kGameKeys[0]));
 
 BOOL FileExists(const char* path)
@@ -428,6 +433,17 @@ void ConfigFile_EnsureExists(void)
         "; Mode=DC (except TRAINING), so it only matters for Mode=OG.\n"
         "WesternDifficulty=%d\n"
         "\n"
+        "[Textures]\n"
+        "; 1 = use the high-resolution replacements in the HD/ folder beside\n"
+        "; USA/: a file HD/<hash>.webp is drawn in place of the texture whose\n"
+        "; pixels hash to that name, at whatever resolution it has. Costs\n"
+        "; nothing while the folder does not exist. See docs/HD_TEXTURES.md.\n"
+        "HdTextures=1\n"
+        "; 1 = write every texture the game uploads to HD/dump/<hash>.png, once\n"
+        "; each - the originals a replacement set is made from. Leave it off for\n"
+        "; normal play.\n"
+        "DumpTextures=0\n"
+        "\n"
         "[Debug]\n"
         "; Master switch for the port-added debug features: F1 debug menu, F6\n"
         "; texture viewer, F8 collision overlay. 0 = off, 1 = on.\n"
@@ -561,6 +577,10 @@ BOOL ConfigFile_Load(void)
     g_bSaturnBattleGame = ReadInt(path, "Game", "BattleGame", 0) != 0;
     // Western difficulty for the PC release; Saturn and DC force it by mode.
     g_bWesternDifficultyOption = ReadInt(path, "Game", "WesternDifficulty", 0) != 0;
+    // Port-added: high-resolution texture replacement and the dump that feeds
+    // it (system/HdTextures.h).
+    HdTextures_Configure(ReadInt(path, "Textures", "HdTextures", 1) != 0,
+                         ReadInt(path, "Textures", "DumpTextures", 0) != 0);
     dbg_printf("[CONFIG] mode=%s overlay=%s ps1_credits=%d\n", GameModeName(g_GameMode),
                GetAssetModeName()[0] ? GetAssetModeName() : "(none)",
                g_bPs1EndingCredits ? 1 : 0);
@@ -635,6 +655,8 @@ static void SaveKeys(BOOL gameSettings, int gameMode, int regionJpn)
         snprintf(game[4], sizeof(game[4]), "%d", g_bSkipUnskippableFmv ? 1 : 0);
         snprintf(game[5], sizeof(game[5]), "%d", g_bSaturnBattleGame ? 1 : 0);
         snprintf(game[6], sizeof(game[6]), "%d", g_bWesternDifficultyOption ? 1 : 0);
+        snprintf(game[7], sizeof(game[7]), "%d",
+                 s_hdTexturesPending >= 0 ? s_hdTexturesPending : (HdTextures_ReplaceEnabled() ? 1 : 0));
         for (int i = 0; i < kGameKeyCount; ++i) {
             SetValue(kGameKeys[i].section, kGameKeys[i].key, game[i], lines, &count);
         }
@@ -668,6 +690,11 @@ void ConfigFile_Save(void)
 void ConfigFile_SaveGameSettings(int gameMode, int regionJpn)
 {
     SaveKeys(TRUE, gameMode, regionJpn);
+}
+
+void ConfigFile_SetHdTextures(int enabled)
+{
+    s_hdTexturesPending = enabled ? 1 : 0;
 }
 
 const char* ConfigFile_GameModeName(int mode)

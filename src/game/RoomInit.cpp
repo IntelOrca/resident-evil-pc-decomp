@@ -7,6 +7,7 @@
 #include "dc/ItemDescriptions.h"
 #include "dc/EntityModels.h"    // the arrange wardrobe's two outfit flags
 #include "../system/AssetPath.h"
+#include "../system/HdTextures.h"   // HdDeferScope (port-only)
 #include <cstdio>
 
 // Forward declarations for helpers defined in other files
@@ -23,6 +24,9 @@ extern void Flg_on(int baseAddr, unsigned int bitIndex);
 extern void room_events_check(void);
 extern void load_room_bg(void);
 extern void load_room_bg_masks(void);
+extern void room_hd_prefetch(void);   // RoomBackgroundWebp.cpp
+extern void room_hd_prefetch_early(void);   // RoomBackgroundWebp.cpp
+extern void room_hd_note_room(const char* rdtPath);   // RoomBackgroundWebp.cpp (port)
 extern void check_camera_switch(int param);
 extern void display_room_camera_bg(void);
 extern void Room_SetupCollisionCallbacks(void);
@@ -344,6 +348,9 @@ void lab_slides_reset(void) {
 // ============================================================================
 void room_set(void)
 {
+    // Port-only: the room's HD pictures decode behind the load (door
+    // animation, load message) instead of stalling it (HdTextures.h).
+    HdDeferScope hdDefer;
     Entity* pPrevEntity;
     unsigned int i;
 
@@ -612,6 +619,10 @@ void room_set(void)
 
     printf("after of model\n");
 
+    // Port-only: hand this room's model textures and effect pages to the HD
+    // decode workers before the init script uploads them (RoomBackgroundWebp.h).
+    room_hd_prefetch_early();
+
     // 0x00477c0f: run_command_functions(g_RoomInitScd)
     run_command_functions((unsigned short*)g_RoomInitScd);
 
@@ -705,6 +716,10 @@ void room_set(void)
 
     // 0x00477ec8: load_room_bg_masks()
     load_room_bg_masks();
+
+    // Port-only: start decoding this room's HD replacements in the background
+    // (RoomBackgroundWebp.h), so the camera cuts do not have to.
+    room_hd_prefetch();
 
     object_delete_00442170(0xc);
 
@@ -808,6 +823,9 @@ void LoadRoomRdt(void)
         s_rdtLoadFailed = 1;
         return;
     }
+    // Port-only: the room file names the masks stored inside it for the HD
+    // texture layer (RoomBackgroundWebp.h).
+    room_hd_note_room(FILE_PATH);
 
     // 0x00477e2a-0x00477e46: Resolve camera pointers
     // Each camera has 2 relative pointer fields (mask_pointer, tim_mask_pointer)

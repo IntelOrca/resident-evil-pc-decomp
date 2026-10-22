@@ -123,12 +123,16 @@ bool lzwUnpack(const uint8_t* src, size_t n, std::vector<uint8_t>* out,
                std::string* error) {
     out->clear();
     out->reserve(n * 4);
-    // code -> (prefix, first character); the original's records are 12 bytes
-    // each, and only codes up to 0x1FFF are reachable. Entries below the
-    // current nextCode are stale after a reset, but no code can name one:
-    // anything under 0x100 is a literal and anything from 0x100 to nextCode-1
-    // is a control code, so the vector never has to be cleared.
-    std::vector<std::pair<int, uint8_t>> dict(0x2000, {0, 0});
+    // code -> (prefix, first character), as many entries as the game's own
+    // table (g_pakDict, 34981 records at 0x00d2b0b0). This tool's encoder
+    // resets before 0x2000, but Capcom's does not: the PC release's paks run
+    // the dictionary far past that, and a table sized for our own output read
+    // out of bounds on them. Entries below the current nextCode are stale
+    // after a reset, but no code can name one: anything under 0x100 is a
+    // literal and anything from 0x100 to 0x102 is a control code, so the
+    // vector never has to be cleared.
+    constexpr int kDictEntries = 34981;
+    std::vector<std::pair<int, uint8_t>> dict(kDictEntries, {0, 0});
 
     size_t pos = 0;
     int codeSize = 9;
@@ -177,6 +181,12 @@ bool lzwUnpack(const uint8_t* src, size_t n, std::vector<uint8_t>* out,
         int walk = special ? prev : code;
         std::vector<uint8_t> str;
         while (walk > 0xFF) {
+            // A code past the table, or a chain longer than the table, is a
+            // stream the game could not have decoded either.
+            if (walk >= kDictEntries || str.size() > (size_t)kDictEntries) {
+                if (error) *error = "code outside the dictionary";
+                return false;
+            }
             str.push_back(dict[walk].second);
             walk = dict[walk].first;
         }

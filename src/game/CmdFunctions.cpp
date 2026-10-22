@@ -6,6 +6,7 @@
 #include <cstring>
 #include "../DebugPrint.h"
 #include "dc/ArrangeStages.h"   // room_file_stage() - see cmd_state_word_set
+#include "../system/HdTextures.h"
 
 // Forward declarations for functions defined in other files
 extern unsigned int set_message_display(unsigned short msg_id, unsigned short pause_game);
@@ -43,6 +44,11 @@ extern void FUN_00484e40(int param1, unsigned char param2, unsigned char param3)
 extern void FUN_00473e40(int param);
 extern int FUN_0048f330(unsigned char param);
 extern void ProcessTmdAsync(unsigned int tmdData);
+extern void Door_HdPrefetch(unsigned int type);                      // DoorSystem.cpp (port)
+extern void TmdAsync_SetHdSource(const void* tim, const char* key,
+                                 bool perPalette);                  // TmdAnimation.cpp (port)
+extern const char* room_hd_model_key(const void* tim,
+                                     char* out, size_t outSize);    // RoomBackgroundWebp.cpp (port)
 extern unsigned int ProcessTmdTextures(char mode, unsigned int* tmdBase, int bank, int depth);
 extern void ClearTmdProcessingFlag(void);
 extern void InitScaMatrix(int parentPtr, ScaMatrixData* matrix);
@@ -374,6 +380,11 @@ int cmd_door_set(void)
     entry[1] = g_ScdOpcodes[0x19];
     *(unsigned short*)(entry + 2) = (unsigned short)doorNumber;
     *(unsigned int*)(entry + 8) = (unsigned int)(g_ScdOpcodes + 2);
+
+    // Port-only: the door record (entry + 8) carries the door type at +0x0A
+    // (room_transition_load); its HD picture starts decoding now.
+    Door_HdPrefetch(g_ScdOpcodes[2 + 0x0A]);
+
     g_ScdOpcodes += 0x1a;
     dbg_printf("DOOR_AT_SET END %s\n", "door_at_set");
     return 1;
@@ -695,7 +706,23 @@ int cmd_item_model_set(void)
                     pal++;
                 }
             }
-            ProcessTmdAsync((unsigned int)itemModelData[1]);
+
+            if (HdTextures_Active()) {
+                // Port-only: the TIM is named after the room file (HdTextures.h) -
+                // unless its palette was just darkened above: a picture made from
+                // the file's own colours would undo that.
+                char hdKey[160];
+                const bool hdEdited = (char)g_ScdOpcodes[10] == ITEM_MAP_GUARDHOUSE ||
+                                      (char)g_ScdOpcodes[10] == ITEM_MAP_COURTYARD;
+                TmdAsync_SetHdSource((const void*)itemModelData[1],
+                                     hdEdited ? NULL
+                                              : room_hd_model_key((const void*)itemModelData[1], hdKey, sizeof(hdKey)),
+                                     true);
+                ProcessTmdAsync((unsigned int)itemModelData[1]);
+                TmdAsync_SetHdSource(NULL, NULL, false);
+            } else {
+                ProcessTmdAsync((unsigned int)itemModelData[1]);
+            }
         }
         if ((char)g_ItemModelCount == 0 || *itemModelData != *DAT_00bca0d0) {
             ProcessTmdTextures(2, (unsigned int*)(unsigned int)*itemModelData, DAT_008e1c78, DAT_008e1c70);
@@ -1057,9 +1084,11 @@ int cmd_omodel_set(void)
             }
         }
 
+        bool hdEdited = false;   // port-only: the palette below was changed
         if (doPaletteBlock) {
             // Stage 1 room 12: adjust TMD colors
             if (g_stageId == STAGE_MANSION_1F && g_roomId == ROOM_GREENHOUSE && (g_ScdOpcodes[1] & 0x3f) == 0) {
+                hdEdited = true;
                 unsigned short* colorPtr = (unsigned short*)(modelData[1] + 0x14);
                 for (int i = 0; i < 256; i++) {
                     unsigned short c = *colorPtr;
@@ -1081,6 +1110,7 @@ int cmd_omodel_set(void)
             // Mansion 2F (stages 2/7) room 11: fix transparent colors.
             // The original zeroes palette entry 0 before the scan; that was missing.
             if ((get_stage_id() + 1) % 5 == 2 && g_roomId == ROOM_FRONT_LESSON_ROOM && (g_ScdOpcodes[1] & 0x3f) == 0) {
+                hdEdited = true;
                 unsigned short* colorPtr = (unsigned short*)(modelData[1] + 0x14);
                 *colorPtr = 0;
                 for (int i = 0; i < 256; i++) {
@@ -1091,7 +1121,20 @@ int cmd_omodel_set(void)
         }
 
         if (doProcessAsync) {
-            ProcessTmdAsync((unsigned int)modelData[1]);
+            if (HdTextures_Active()) {
+                // Port-only: the TIM is named after the room file (HdTextures.h) -
+                // unless its palette was just changed above: a picture made from
+                // the file's own colours would undo that.
+                char hdKey[160];
+                TmdAsync_SetHdSource((const void*)modelData[1],
+                                     hdEdited ? NULL
+                                              : room_hd_model_key((const void*)modelData[1], hdKey, sizeof(hdKey)),
+                                     true);
+                ProcessTmdAsync((unsigned int)modelData[1]);
+                TmdAsync_SetHdSource(NULL, NULL, false);
+            } else {
+                ProcessTmdAsync((unsigned int)modelData[1]);
+            }
         }
     }
 

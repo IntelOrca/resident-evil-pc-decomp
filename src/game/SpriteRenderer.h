@@ -209,6 +209,11 @@ int SubmitLine(short x0, short y0, short x1, short y1, unsigned short depth,
                float r, float g, float b, float alpha);
 int AddSprite(TextureDesc* texture, short depth, int tpage, int fade);
 int AddTintSprite(TextureDesc* texture, unsigned short fade);
+// Port-only: AddTintSprite for a glyph of the HD 8x8 font (HdText.cpp) - a
+// fractional game rectangle sampling `tex` (a MarniHandle) at u0..v1.
+int AddTintSpriteRect(TextureDesc* texture, unsigned short brightness,
+                      float gameX, float gameY, float w, float h,
+                      float u0, float v0, float u1, float v1, DWORD32 tex);
 // transZ is the shadow's composed-matrix t[2] (view-space Z of the quad's
 // origin). The original stores it in the OT record and compares it against the
 // fade polys already inserted this frame to keep two overlapping shadows off

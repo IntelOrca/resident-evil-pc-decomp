@@ -4,6 +4,7 @@
 #include "../marni/MarniSystem.h"
 #include "../marni/PSXTexture.h"
 #include "../marni/MarniBits.h"
+#include "../system/HdTextures.h"
 #include "TmdRenderer.h"
 #include <cstdio>
 #include <cstring>
@@ -1056,6 +1057,16 @@ static void Slides_ReleaseVariants(void) {
 }
 
 void TexturePage_LoadImage(void* imageData, short param2, short param3) {
+    // Port-only: each cell is named after the file and the slide, the way the
+    // inventory icons are (HD/<TREE>/Data/SLIDE/<NN>.webp, system/HdTextures.h).
+    // Taken before anything else reads the buffer, while its checksum holds.
+    char hdKey[160] = "";
+    if (HdTextures_Active() &&
+        (HdTextures_KeyForBuffer(imageData, hdKey, sizeof(hdKey))[0] == '\0' ||
+         strchr(hdKey, '@') != NULL)) {
+        hdKey[0] = '\0';
+    }
+
     ProcessTextureImage(imageData, param2, param3, 0);
 
     // 0x0046d77e tail: parse the TIM again and build one RGBA texture per
@@ -1128,7 +1139,12 @@ void TexturePage_LoadImage(void* imageData, short param2, short param3) {
             }
         }
 
-        MarniCreateTexture(drawW, drawH, 32, rgba, &s_slidesVariantSRV[c]);
+        {
+            char cellKey[180] = "";
+            if (hdKey[0] != '\0') snprintf(cellKey, sizeof(cellKey), "%s/%02d", hdKey, c);
+            HdSourceScope hd(cellKey, drawW, drawH);
+            MarniCreateTexture(drawW, drawH, 32, rgba, &s_slidesVariantSRV[c]);
+        }
         delete[] rgba;
 
         const int slot = SLIDES_TEX_BASE + c;

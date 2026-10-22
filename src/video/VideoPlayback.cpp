@@ -10,6 +10,7 @@
 #include "../game/Ps1FmvSubtitles.h"
 #include "../platform/platform.h"
 #include "../system/AssetPath.h"
+#include "../system/HdTextures.h"
 #include "../marni/MarniSystem.h"
 #include <stdio.h>
 
@@ -288,6 +289,17 @@ BOOL CheckVideoFileExists(const char* filename)
                                           sizeof(creditsPath)) &&
         FileReadable(creditsPath)) {
         strcpy_s(g_videoFilePath, sizeof(g_videoFilePath), creditsPath);
+        Ps1EndingCredits_SetVideoPath(g_videoFilePath);
+        return TRUE;
+    }
+
+    // Port-added: an HD movie, "HD/<TREE>/MOVIE/<name>.mp4" (the asset
+    // migrator's HD Pack tab), stands in for the tree's own movie.
+    char key[MAX_PATH];
+    char hd[MAX_PATH];
+    if (AssetSourceKey(filename, key, sizeof(key)) != NULL &&
+        HdTextures_NamedFile(key, ".mp4", hd, sizeof(hd))) {
+        strcpy_s(g_videoFilePath, sizeof(g_videoFilePath), hd);
         Ps1EndingCredits_SetVideoPath(g_videoFilePath);
         return TRUE;
     }

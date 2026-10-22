@@ -39,6 +39,12 @@ void ConfigFile_Save(void);
 // included.
 void ConfigFile_SaveGameSettings(int gameMode, int regionJpn);
 
+// The [Textures] HdTextures value ConfigFile_SaveGameSettings() writes. Like
+// Mode and Region it only takes effect on the next start, so the running
+// setting (HdTextures_ReplaceEnabled) is not touched. Until this is called the
+// running value is written.
+void ConfigFile_SetHdTextures(int enabled);
+
 // "OG" / "DC" / "SATURN" - the [Game] Mode spelling, which is also the asset
 // overlay's folder name.
 const char* ConfigFile_GameModeName(int mode);

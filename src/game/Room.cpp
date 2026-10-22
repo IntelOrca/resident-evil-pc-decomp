@@ -8,6 +8,8 @@
 #include "../DebugPrint.h"
 #include "dc/ArrangeStages.h"   // room_file_stage()
 #include "saturn/SaturnBattle.h"
+#include "RoomBackgroundWebp.h"
+#include "../system/HdTextures.h"     // HdSourceScope (port-only)
 
 extern void SetSpriteBufferFlag(void);
 
@@ -748,6 +750,10 @@ void load_room_masks(int param_1) // 0x00475a90
     if (maskIsInRdt) {
         void* timMask = (void*)cameras[param_1].tim_mask_pointer;
         if (timMask != NULL) {
+            // Port-only: named after the room file and camera
+            // (HD/DC/Stage8/ROOM8000_MASK3.webp, RoomBackgroundWebp.h).
+            char hdKey[160];
+            HdSourceScope hdSource(room_hd_rdt_mask_key(param_1, hdKey, sizeof(hdKey)), 0, 0);
             TexturePage_SetupFull(timMask, g_TextureBankID, g_TextureCurrentPage,
                                   ROOM_MASK_TEXTURE_SLOT);
         } else {
@@ -770,15 +776,22 @@ void load_room_masks(int param_1) // 0x00475a90
         g_maskPathTemplate[GAME_DATA_PATH_IDX(0x13)] = (char)(g_roomId % 10 + 0x30);
 
         void* pakData;
+        // Port-only: the page may be replaced by its file's HD/<TREE>/Objspr
+        // picture (RoomBackgroundWebp.h).
+        char hdKey[128];
+        const char* hdName;
         // ROOM3110.RDT (scrapped dev heliport, Stage 3 + ROOM_SCRAPPED_HELIPORT) is
         // a stub with empty camera mask blocks, so its mask pak is loaded directly
         // instead of coming from the preloaded g_bgMaskDataBuffer.
         if ((g_stageId == STAGE_COURTYARD) && (g_roomId == ROOM_SCRAPPED_HELIPORT)) {
             LoadFile(g_maskPathTemplate, &g_bgPakLoadBuffer, 0x20);
             pakData = &g_bgPakLoadBuffer;
+            hdName = room_hd_key_for(g_maskPathTemplate, hdKey, sizeof(hdKey));
         } else {
             pakData = &g_bgMaskDataBuffer[g_bgMaskOffsets[param_1]];
+            hdName = room_hd_mask_key(param_1);
         }
+        HdSourceScope hdSource(hdName, 0, 0);
         unpack_pakfile_(pakData, g_TimImageBuffer__bitmap);
         // The original passes texture-set parameter 0 here. Its legacy page
         // handle is stored in texture set 4 internally (SetupFull adds the 4),
@@ -798,6 +811,11 @@ void load_room_masks(int param_1) // 0x00475a90
 // ============================================================================
 void load_room_bg(void) // 0x00462b00
 {
+    // Port-only: a camera's background may be "rcSRRC.webp" instead of the
+    // .pak (RoomBackgroundWebp.h). Each read below asks for the stand-in first
+    // and, when there is none, runs the original code unchanged.
+    room_bg_webp_reset();
+
     if (g_bgCacheMode == 0) {
         int cameraIdx = 0;
         if (g_RdtPointer->cameras_count != 0) {
@@ -856,19 +874,25 @@ void load_room_bg(void) // 0x00462b00
                 g_bgPathTemplate[GAME_DATA_PATH_IDX(0x0b)] = g_bgPathTemplate[GAME_DATA_PATH_IDX(0x0f)];
 
                 SetSpriteBufferFlag();
-                LoadFile(g_bgPathTemplate, g_bgPakLoadBuffer, 2);
-                unpack_pakfile_(g_bgPakLoadBuffer, g_TimImageBuffer);
+                // Port-only: the upload below may be replaced by the file's
+                // HD/<TREE>/... picture (RoomBackgroundWebp.h).
+                room_hd_note_bg(g_bgPathTemplate, cameraIdx);
+                HdSourceScope hdSource(room_hd_bg_key(cameraIdx), room_hd_bg_width(), room_hd_bg_height());
+                if (!room_bg_webp_show_file(g_bgPathTemplate, cameraIdx)) {
+                    LoadFile(g_bgPathTemplate, g_bgPakLoadBuffer, 2);
+                    unpack_pakfile_(g_bgPakLoadBuffer, g_TimImageBuffer);
 
-                int width, height;
-                if ((g_main_state_flags2 & MSF2_SCREEN_BORDER) == 0) {
-                    width = 320;
-                    height = 240;
-                } else {
-                    width = 316;
-                    height = 236;
+                    int width, height;
+                    if ((g_main_state_flags2 & MSF2_SCREEN_BORDER) == 0) {
+                        width = 320;
+                        height = 240;
+                    } else {
+                        width = 316;
+                        height = 236;
+                    }
+
+                    display_image(cameraIdx, g_TimImageBuffer__bitmap, width, height);
                 }
-
-                display_image(cameraIdx, g_TimImageBuffer__bitmap, width, height);
                 title_setup_texture_pages(cameraIdx, 1);
                 cameraIdx++;
             } while (cameraIdx < (int)(unsigned int)g_RdtPointer->cameras_count);
@@ -924,7 +948,14 @@ void load_room_bg(void) // 0x00462b00
                 // the shift exactly. See the matching note there: the port shares
                 // one array for both, so the reader has to add the 1 back.
                 g_bgCameraOffsets[camCounter] = totalSize;
-                int fileSize = (int)LoadFile(g_bgPathTemplate, &g_bgCacheBuffer[totalSize], 2);
+                // A camera with a .webp stand-in takes no room in the cache:
+                // its file is kept by room_bg_webp_preload, under the camera's
+                // own index (camCounter is already one past it).
+                int fileSize = 0;
+                room_hd_note_bg(g_bgPathTemplate, camCounter - 1);   // port-only
+                if (!room_bg_webp_preload(g_bgPathTemplate, camCounter - 1)) {
+                    fileSize = (int)LoadFile(g_bgPathTemplate, &g_bgCacheBuffer[totalSize], 2);
+                }
                 totalSize += fileSize;
             } while (camCounter < (int)(unsigned int)g_RdtPointer->cameras_count);
         }
@@ -947,6 +978,11 @@ void load_room_bg_image(void) // 0x004629c0
         return;
     }
 
+    // Port-only: the camera's upload may be replaced by its file's
+    // HD/<TREE>/... picture (RoomBackgroundWebp.h). Named below, once known.
+    HdSourceScope hdSource(NULL, 0, 0);
+    char hdKey[128];
+
     void* pakData;
     if (g_stageId == STAGE_COURTYARD && g_roomId == ROOM_SCRAPPED_HELIPORT) {
         g_bgPathTemplate[GAME_DATA_PATH_IDX(0x10)] = g_hexCharTable[1];
@@ -954,9 +990,20 @@ void load_room_bg_image(void) // 0x004629c0
         g_bgPathTemplate[GAME_DATA_PATH_IDX(0x12)] = g_hexCharTable[g_roomCameraId];
         g_bgPathTemplate[GAME_DATA_PATH_IDX(0x0f)] = g_hexCharTable[3];
         g_bgPathTemplate[GAME_DATA_PATH_IDX(0x0b)] = g_bgPathTemplate[GAME_DATA_PATH_IDX(0x0f)];
+        HdTextures_BeginSource(room_hd_key_for(g_bgPathTemplate, hdKey, sizeof(hdKey)),
+                               room_hd_bg_width(), room_hd_bg_height());
+        if (room_bg_webp_show_file(g_bgPathTemplate, 8)) {   // port-only
+            title_setup_texture_pages(8, 1);
+            return;
+        }
         LoadFile(g_bgPathTemplate, g_bgPakLoadBuffer, 2);
         pakData = g_bgPakLoadBuffer;
     } else {
+        HdTextures_BeginSource(room_hd_bg_key(g_roomCameraId), room_hd_bg_width(), room_hd_bg_height());
+        if (room_bg_webp_show_cached(g_roomCameraId, 8)) {   // port-only
+            title_setup_texture_pages(8, 1);
+            return;
+        }
         // 0x00462a5?: g_bgCacheBuffer + (&DAT_00aea090)[g_roomCameraId]. The
         // original reads this table from 0x00aea090 while load_room_bg WRITES it
         // from 0x00aea08c with a post-incremented index - two bases 4 bytes apart
@@ -995,6 +1042,8 @@ void load_room_bg_masks(void) // 0x004759d0
     int camOffset = 0;
     int* offsetPtr = g_bgMaskOffsets;
 
+    room_hd_reset_masks();   // port-only: this room's mask files are noted below
+
     if (g_RdtPointer->cameras_count != 0) {
         do {
             RDT* pRdt = g_RdtPointer;
@@ -1029,6 +1078,8 @@ void load_room_bg_masks(void) // 0x004759d0
                     dbg_printf("[masks] %s missing - camera %d draws without its"
                                " occlusion layer\n", g_maskPathTemplate, camCounter);
                     fileSize = 0;
+                } else {
+                    room_hd_note_mask(g_maskPathTemplate, camCounter);   // port-only
                 }
             }
 

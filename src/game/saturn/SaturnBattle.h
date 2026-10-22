@@ -262,7 +262,9 @@ int saturn_battle_model_override(struct Entity* e, int slot);
 // The golden Tyrant (GAME5 0x0603BD0A): every CLUT of a model loaded in arena
 // 15 gets red +4, green +3, blue -5 (RGB555 components, clamped 0..31, the STP
 // bit kept) - 0x0603A680. `tim` is the model's TIM; a no-op elsewhere.
-void saturn_battle_tint_model_tim(unsigned char* tim);
+// Returns 1 when it tinted (port: an HD skin named by file is then not used,
+// since it would draw the model untinted).
+int saturn_battle_tint_model_tim(unsigned char* tim);
 
 // The arena's BGM group: 1 and *group set when a run is in progress, else 0.
 int saturn_battle_bgm_group(unsigned char room, unsigned char* group);

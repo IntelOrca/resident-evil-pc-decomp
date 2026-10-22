@@ -50,6 +50,31 @@ int saturn_title_font_load(void);
 unsigned int saturn_title_build_strips(unsigned char* out,
                                        const char* const* items, int count);
 
+// Loads the sheet saturn_title_build_strips just built as texture `texId` in
+// `slot` (LoadTexturePage). With HD textures on and a TrueType font in the HD
+// folder (HD/<USA|JPN>/Data/TITLEFNT.TTF; the migrator writes Archivo Black),
+// the upload gets an HD copy of the sheet drawn in it, at a scale fitted to the
+// desktop's height (the 4bpp sheet stays the logical texture); otherwise this
+// is LoadTexturePage alone and the menu is the bitmap font of TITLEFNT.BIN.
+void saturn_title_load_strips(void* tim, short texId, int slot);
+
+// The release's own title sheets, loaded through saturn_title_load_sheet:
+#define SATURN_TITLE_SHEET_USA_START      0   // data\t_start.tim (a pad is connected)
+#define SATURN_TITLE_SHEET_USA_PRESS      1   // data\t_press.tim
+#define SATURN_TITLE_SHEET_DC_MAIN        2   // the Director's Cut's page A (cells 0-2)
+#define SATURN_TITLE_SHEET_DC_DIFFICULTY  3   // its page B (cells 3-6, the difficulty submenu)
+#define SATURN_TITLE_SHEET_COUNT          4
+
+// LoadTexturePage(tim, texId, pageOffset, slot, unused, posX, posY, flags) for
+// one of those sheets. With HD textures on, the upload gets an HD picture with
+// the sheet's text lines drawn again in the HD fonts: PRESS START / NEW GAME /
+// STANDARD ... in the title font (HD/<tree>/Data/TITLEFNT.TTF), the copyright
+// lines in the 8x8 HD font (FONTUS.TTF / FONT.TTF; HdText.h). A sheet whose
+// art is not laid out as this file expects keeps its own.
+void saturn_title_load_sheet(int sheet, void* tim, short texId, short pageOffset,
+                             int slot, int unused, short posX, short posY,
+                             unsigned int flags);
+
 // Makes the next saturn_title_font_load() look for the file again. The answer
 // is cached, and the options menu can change the asset region under it.
 void saturn_title_font_forget(void);

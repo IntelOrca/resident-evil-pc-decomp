@@ -1,12 +1,13 @@
 #include "SaturnAssetsTab.h"
 
+#include "BackgroundFormatRow.h"
+#include "FfmpegRow.h"
 #include "RunPanel.h"
 #include "Worker.h"
 #include "core/Migrate.h"
 
 #include <QCheckBox>
 #include <QComboBox>
-#include <QCoreApplication>
 #include <QFileDialog>
 #include <QFormLayout>
 #include <QHBoxLayout>
@@ -29,13 +30,13 @@ QWidget* pathRow(QLineEdit* edit, QPushButton* browse) {
 
 }  // namespace
 
-SaturnAssetsTab::SaturnAssetsTab(QWidget* parent) : QWidget(parent) {
+SaturnAssetsTab::SaturnAssetsTab(QLineEdit* target, BackgroundFormatRow* backgrounds,
+                                 FfmpegRow* ffmpeg, QWidget* parent)
+    : QWidget(parent), m_target(target), m_backgrounds(backgrounds),
+      m_ffmpeg(ffmpeg) {
     m_image = new QLineEdit(this);
     auto* browseImage = new QPushButton(tr("Browse..."), this);
 
-    m_target = new QLineEdit(this);
-    m_target->setText(QCoreApplication::applicationDirPath());
-    auto* browseTarget = new QPushButton(tr("Browse..."), this);
 
     m_allModels = new QCheckBox(tr("All enemy and character models"), this);
     m_allModels->setChecked(false);
@@ -93,8 +94,6 @@ SaturnAssetsTab::SaturnAssetsTab(QWidget* parent) : QWidget(parent) {
     m_musicQuality->setRange(0, 10);
     m_musicQuality->setValue(6);
     m_musicQuality->setToolTip(tr("Vorbis quality (-q:a)."));
-    m_ffmpeg = new QLineEdit(this);
-    m_ffmpeg->setText(QStringLiteral("ffmpeg"));
     auto* musicRow = new QWidget(this);
     {
         auto* l = new QHBoxLayout(musicRow);
@@ -102,25 +101,19 @@ SaturnAssetsTab::SaturnAssetsTab(QWidget* parent) : QWidget(parent) {
         l->addWidget(m_musicFormat);
         l->addWidget(new QLabel(tr("Quality:"), musicRow));
         l->addWidget(m_musicQuality);
-        l->addWidget(new QLabel(tr("ffmpeg:"), musicRow));
-        l->addWidget(m_ffmpeg, 1);
+        l->addStretch(1);
     }
     // The format applies to every rendered sound (the Battle Game's music, the
     // Tick's effects and, when asked for, the campaign BGM), so it is always live.
-    // ffmpeg is needed for Ogg and for the movies.
     auto syncMusic = [this]() {
-        const bool ogg = m_musicFormat->currentData().toBool();
-        m_musicQuality->setEnabled(ogg);
-        m_ffmpeg->setEnabled(ogg || m_movies->isChecked());
+        m_musicQuality->setEnabled(m_musicFormat->currentData().toBool());
     };
     connect(m_musicFormat, QOverload<int>::of(&QComboBox::currentIndexChanged), this, syncMusic);
-    connect(m_movies, &QCheckBox::toggled, this, syncMusic);
     syncMusic();
     m_verify = new QCheckBox(tr("Verify the overlay after building"), this);
     m_verify->setChecked(true);
     auto* form = new QFormLayout();
     form->addRow(tr("Disc image:"), pathRow(m_image, browseImage));
-    form->addRow(tr("Target game folder:"), pathRow(m_target, browseTarget));
     form->addRow(tr("Optional:"), m_allModels);
     form->addRow(QString(), m_allRooms);
     form->addRow(QString(), m_allBgm);
@@ -156,7 +149,6 @@ SaturnAssetsTab::SaturnAssetsTab(QWidget* parent) : QWidget(parent) {
     layout->addWidget(m_run, 1);
 
     connect(browseImage, &QPushButton::clicked, this, &SaturnAssetsTab::onBrowseImage);
-    connect(browseTarget, &QPushButton::clicked, this, &SaturnAssetsTab::onBrowseTarget);
 
     m_run->setTaskFactory([this]() -> Worker* {
         re1::SaturnMigrationOptions opts;
@@ -169,8 +161,10 @@ SaturnAssetsTab::SaturnAssetsTab(QWidget* parent) : QWidget(parent) {
         opts.musicFormat = m_musicFormat->currentData().toBool() ? re1::AudioFormat::Ogg
                                                                  : re1::AudioFormat::Wav;
         opts.oggQuality = m_musicQuality->value();
-        opts.ffmpegPath = m_ffmpeg->text().toStdString();
+        opts.ffmpegPath = m_ffmpeg->path();
         opts.verify = m_verify->isChecked();
+        opts.backgroundFormat = m_backgrounds->format();
+        opts.webpQuality = m_backgrounds->quality();
         return new Worker(
             [opts](const re1::Progress& p, QString& error) {
                 std::string err;
@@ -186,10 +180,4 @@ void SaturnAssetsTab::onBrowseImage() {
         this, tr("Select the Saturn disc image (track 1)"), m_image->text(),
         tr("Disc images (*.bin *.cue *.iso);;All files (*)"));
     if (!f.isEmpty()) m_image->setText(f);
-}
-
-void SaturnAssetsTab::onBrowseTarget() {
-    const QString d = QFileDialog::getExistingDirectory(
-        this, tr("Select the game folder"), m_target->text());
-    if (!d.isEmpty()) m_target->setText(d);
 }

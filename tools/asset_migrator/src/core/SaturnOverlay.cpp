@@ -921,6 +921,14 @@ bool migrateSaturnAssets(const SaturnMigrationOptions& opts,
         }
         progress.info("  " + std::to_string(written.size()) + " file(s) OK");
     }
+
+    // After the verify, which reads the .pak files back through the game's LZW.
+    BackgroundFormatOptions bg;
+    bg.format = opts.backgroundFormat;
+    bg.quality = opts.webpQuality;
+    bg.ffmpegPath = opts.ffmpegPath;
+    if (!applyBackgroundFormat(overlay, bg, progress, error)) return false;
+
     progress.info("Saturn overlay complete: " + std::to_string(written.size()) +
                   " file(s) in " + overlay);
     return true;

@@ -5,7 +5,9 @@
 #include "../marni/PSXTexture.h"
 #include "FileLoader.h"
 #include "../DebugPrint.h"
+#include "../system/HdTextures.h"
 #include <cstdio>
+#include <cstring>
 
 // ============================================================================
 // TMD texture header struct (output of FUN_00482d40 / ParseTmdTextureHeader)
@@ -135,6 +137,16 @@ void SetupTextureBank(DWORD** param_1, int param_2)
     // the room-exit cleanup then freed the same pixel data twice
     // (RtlValidateHeap: invalid address on leaving ROOM40F0).
     dst->CopyFrom(src);
+    // Port-only: the copy holds the same file as its source (HD model skins).
+    {
+        const void* tag = NULL;
+        const char* key = HdTextures_OwnerKey(src, &tag);
+        if (key != NULL && ((CMarniBits*)src)->m_pPixelData != tag) key = NULL;
+        if (key != NULL && HdTextures_OwnerPerPalette(src))
+            HdTextures_SetOwnerKeyPerPalette(dst, ((CMarniBits*)dst)->m_pPixelData, key);
+        else
+            HdTextures_SetOwnerKey(dst, ((CMarniBits*)dst)->m_pPixelData, key);
+    }
 
     DWORD* dstFlag = (DWORD*)(dstTex + 0x348);
     DWORD* srcFlag = (DWORD*)(srcTex + 0x348);
@@ -941,6 +953,30 @@ void ParseTmdTextureHeader(void* data, TmdTextureHeader* header)
 }
 
 // ============================================================================
+// Port-only: the source of the TIM ProcessTmdAsync is about to upload.
+// ExecAsync returns only once the callback has run, so the loader sets this
+// right before the call and clears it right after; the TIM pointer is kept as
+// well, so a key can only ever name the TIM it was set for. `perPalette`: a
+// model inside a room file, named per palette row (HdTextures.h).
+// ============================================================================
+static const BYTE* s_tmdAsyncHdTim = NULL;
+static char        s_tmdAsyncHdKey[128] = "";
+static bool        s_tmdAsyncHdPerPalette = false;
+
+void TmdAsync_SetHdSource(const void* tim, const char* key, bool perPalette)
+{
+    s_tmdAsyncHdPerPalette = perPalette;
+    if (tim == NULL || key == NULL || key[0] == '\0') {
+        s_tmdAsyncHdTim = NULL;
+        s_tmdAsyncHdKey[0] = '\0';
+        return;
+    }
+    s_tmdAsyncHdTim = (const BYTE*)tim;
+    strncpy(s_tmdAsyncHdKey, key, sizeof(s_tmdAsyncHdKey) - 1);
+    s_tmdAsyncHdKey[sizeof(s_tmdAsyncHdKey) - 1] = '\0';
+}
+
+// ============================================================================
 // FUN_00483770 (0x00483770) - TMD processing callback
 // Processes TMD texture data asynchronously. Called via ExecAsync.
 // Handles texture page allocation, CLUT setup, and PSXTexture loading.
@@ -977,6 +1013,16 @@ void TmdProcessingCallback(void)
 
     VideoDriver_ClearState348(psvTex, g_pMarniDirect3D);
     ((PSXTexture*)psvTex)->Store((int*)tmdData, 1);
+
+    // Port-only: name the bank after the file its TIM came from, so the
+    // renderer can find an HD skin for it by path (MarniSystem.cpp,
+    // HdModelKeyFor). A TIM nobody named forgets whatever the bank held.
+    if (s_tmdAsyncHdTim == tmdData && s_tmdAsyncHdPerPalette)
+        HdTextures_SetOwnerKeyPerPalette(psvTex, ((CMarniBits*)psvTex)->m_pPixelData,
+                                         s_tmdAsyncHdKey);
+    else
+        HdTextures_SetOwnerKey(psvTex, ((CMarniBits*)psvTex)->m_pPixelData,
+                               (s_tmdAsyncHdTim == tmdData) ? s_tmdAsyncHdKey : NULL);
 
     *puVar7 = savedVar7;
     *puVar1 = savedVar1;

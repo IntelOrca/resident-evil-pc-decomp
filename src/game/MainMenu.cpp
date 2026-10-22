@@ -25,6 +25,8 @@
 #include "SpriteRenderer.h"  // g_SubpixelOffsetX/Y (item viewer OT quad records)
 #include "dc/ItemModels.h"    // DC item-view file names (item_model_file_name)
 #include "dc/Items.h"       // lockpick/ammo item ids the DC moved
+#include "../system/HdTextures.h"   // item-view texture names (port-only)
+extern void LoadImage_SetHdIconKey(const char* key);   // TextureLoader.cpp (port)
 #include <math.h>
 #include <cstdio>
 #include <cstring>
@@ -135,6 +137,7 @@ static unsigned char  SUBMENU_STATE_ID;   // 0x00ae9f1d
 
 // Item model path buffer (for loading TIM files)
 static char           DAT_008e1cb0[128];  // 0x008e1cb0
+static char           s_itemModelHdKey[180] = "";  // port-only: the .ivm's HD texture name
 
 // External function stubs (pending decompilation)
 extern void FUN_004844b0(void);
@@ -5356,9 +5359,20 @@ static void itembox_draw_cursor(void)
 // y = ((slot&~1)<<4) + 0x50 (verified against the disassembly).
 static void itembox_draw_slot_icon(int imgType, int slot)
 {
+    // Port-only: name the icon like LoadItemImage does (HD/<TREE>/Data/ITEM_ALL/<NN>.webp)
+    // so the box grid shows the HD picture too, not just the inventory.
+    char hdKey[180];
+    if (HdTextures_Active() &&
+        HdTextures_KeyForBuffer((const void*)g_TimImageBuffer__bitmap, hdKey, sizeof(hdKey))[0] != '\0' &&
+        strchr(hdKey, '@') == NULL) {
+        char key[200];
+        snprintf(key, sizeof(key), "%s/%02d", hdKey, imgType);
+        LoadImage_SetHdIconKey(key);
+    }
     LoadImage((int)g_TimImageBuffer__bitmap + imgType * 0x4b0, 0xc, slot + 0xf, 1,
               (short)((slot & 1) * 0x14), (short)(((slot & 0xfe) << 4) + 0x50),
               0x14, 0x1e, 1);
+    LoadImage_SetHdIconKey(NULL);
 }
 
 // 0x004941f0 - item box interaction; returns non-zero when the menu closes
@@ -6602,6 +6616,11 @@ static void FUN_004841f0(void);
 void FUN_00484420(void* src, void* dst)
 {
     g_itemModelSrc = (int)src;
+    // Port-only: the .ivm this buffer was loaded from names the item's
+    // texture (HD/<TREE>/item_m2/i00v.webp, HdTextures.h). Taken here, while
+    // the buffer is still the file as read (FUN_004841f0 resolves pointers in
+    // it), for the item menu and the ending's i73v.ivm alike.
+    HdTextures_KeyForBuffer(src, s_itemModelHdKey, sizeof(s_itemModelHdKey));
     unsigned char* p = (unsigned char*)src;
     g_itemModelTmdBase = 0;
     // Validate the .ivm TIM header before trusting its lengths
@@ -6948,6 +6967,10 @@ static void FUN_004841f0(void)
 
     if (ITEM_PAGE_CREATED(itemPage) == 0) {
         LoadPSXImage((PSXTexture*)itemPage, (void*)g_itemModelSrc, 1);
+        // Port-only: name the page after the .ivm (HdTextures.h; the renderer
+        // looks it up in MarniSystem.cpp, HdModelKeyFor).
+        HdTextures_SetOwnerKey(itemPage, ((CMarniBits*)itemPage)->m_pPixelData,
+                               s_itemModelHdKey);
         Direct3DTIM_Create(itemPage, g_pMarniDirect3D);
     }
 
@@ -6962,6 +6985,9 @@ static void FUN_004841f0(void)
             // and CLUT buffers, so knocking texels out below cannot touch the
             // item page).
             LoadPSXImage((PSXTexture*)g_itemStpPage, (void*)g_itemModelSrc, 1);
+            // Port-only: this copy has its translucent texels knocked out, so
+            // it is not the file's picture and must not get the file's HD one.
+            HdTextures_SetOwnerKey(g_itemStpPage, NULL, NULL);
             ItemStpPage_KnockOutStpTexels();
             // 0x0048433c-0x0048435f: the original creates the per-CLUT handles
             // by hand and then sets 0x008f8c50 (= page + 0x348). That is what

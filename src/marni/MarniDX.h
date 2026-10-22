@@ -139,6 +139,16 @@ public:
     BOOL UpdateTexturePixels(MarniHandle tex, const void* pixelData,
                              int width, int height, int bpp);
 
+    // Port-only (HD textures): rebuild the texture behind `tex` from 32-bit
+    // RGBA pixels at a NEW size, keeping the handle, so a texture uploaded
+    // before its HD picture was decoded can take the picture later without
+    // anything that holds the handle noticing. TRUE on success.
+    BOOL ReplaceTexture(MarniHandle tex, int width, int height, const void* rgba32);
+
+    // A number that changes every time the slot behind `tex` is released, so
+    // a caller that kept a handle can tell it still names the same texture.
+    unsigned int TextureSerial(MarniHandle tex) const;
+
     // Return the dimensions of a live handle (fills *w/*h). No-op if invalid.
     void GetTextureSize(MarniHandle tex, int* outWidth, int* outHeight) const;
 

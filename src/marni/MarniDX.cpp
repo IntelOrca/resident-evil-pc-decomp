@@ -118,6 +118,7 @@ struct TexSlot {
     ID3D11ShaderResourceView* srv;
     int                     width;
     int                     height;
+    unsigned int            serial;   // port-only: bumped on every release
 };
 
 #define MARNI_MAX_TEXTURES 2048
@@ -416,6 +417,7 @@ void MarniDX::Impl::ReleaseSlot(int idx)
     if (t.srv) { t.srv->Release();   t.srv = nullptr; }
     if (t.tex) { t.tex->Release();   t.tex = nullptr; }
     t.width = 0; t.height = 0;
+    t.serial++;
 }
 
 int MarniDX::Impl::AllocSlot(ID3D11Texture2D* t, ID3D11ShaderResourceView* s,
@@ -1061,6 +1063,53 @@ BOOL MarniDX::UpdateTexturePixels(MarniHandle tex, const void* pixelData,
     p->context->UpdateSubresource(t.tex, 0, &dstBox, rgba, (UINT)width * 4, 0);
     free(rgba);
     return TRUE;
+}
+
+BOOL MarniDX::ReplaceTexture(MarniHandle tex, int width, int height, const void* rgba32)
+{
+    Impl* p = m_pImpl;
+    if (!p || !p->device || !rgba32 || width <= 0 || height <= 0) return FALSE;
+    if (tex <= 0 || tex >= MARNI_MAX_TEXTURES) return FALSE;
+    TexSlot& t = p->slots[tex];
+    if (!t.tex) return FALSE;
+
+    D3D11_TEXTURE2D_DESC td = {};
+    td.Width            = (UINT)width;
+    td.Height           = (UINT)height;
+    td.MipLevels        = 1;
+    td.ArraySize        = 1;
+    td.Format           = DXGI_FORMAT_R8G8B8A8_UNORM;
+    td.SampleDesc.Count = 1;
+    td.Usage            = D3D11_USAGE_DEFAULT;
+    td.BindFlags        = D3D11_BIND_SHADER_RESOURCE;
+    D3D11_SUBRESOURCE_DATA sd = {};
+    sd.pSysMem     = rgba32;
+    sd.SysMemPitch = (UINT)width * 4;
+    ID3D11Texture2D* nt = nullptr;
+    if (FAILED(p->device->CreateTexture2D(&td, &sd, &nt)) || !nt) return FALSE;
+    D3D11_SHADER_RESOURCE_VIEW_DESC sdv = {};
+    sdv.Format              = DXGI_FORMAT_R8G8B8A8_UNORM;
+    sdv.ViewDimension       = D3D11_SRV_DIMENSION_TEXTURE2D;
+    sdv.Texture2D.MipLevels = 1;
+    ID3D11ShaderResourceView* ns = nullptr;
+    if (FAILED(p->device->CreateShaderResourceView(nt, &sdv, &ns)) || !ns) {
+        nt->Release();
+        return FALSE;
+    }
+    if (t.srv) t.srv->Release();
+    if (t.tex) t.tex->Release();
+    t.tex = nt;
+    t.srv = ns;
+    t.width = width;
+    t.height = height;
+    return TRUE;
+}
+
+unsigned int MarniDX::TextureSerial(MarniHandle tex) const
+{
+    const Impl* p = m_pImpl;
+    if (!p || tex <= 0 || tex >= MARNI_MAX_TEXTURES) return 0;
+    return p->slots[tex].serial;
 }
 
 void MarniDX::GetTextureSize(MarniHandle tex, int* w, int* h) const

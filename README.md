@@ -217,8 +217,47 @@ present. Release packages ship `config.ini.template` from the repository root as
 that initial `config.ini`. The `[Display]`, `[Player]` and `[Input]` keys are
 saved on exit. `[Assets] Version`, the `[Game]` keys and `[Input] PadDef` (the
 gamepad layout) are written when you leave the title screen's OPTIONS menu
-(below). Everything else - `[Assets] Path`, `[Save]`, `[Debug]`, your comments -
-is yours to edit and is never rewritten.
+(below). Everything else - `[Assets] Path`, `[Save]`, `[Textures]`, `[Debug]`,
+your comments - is yours to edit and is never rewritten.
+
+### WebP backgrounds and HD textures
+
+The port has an **HD mode**: high-resolution backgrounds, textures, model skins,
+movies and fonts, all optional and all read from files. With no `HD/` folder the
+game looks exactly as the original. Everything below is read as **WebP** (lossy
+or lossless, any resolution) unless noted:
+
+- **Room backgrounds.** A `Stage<n>/RC*.webp` file is used in place of the
+  `.pak` of the same name. The asset migrator can write a whole tree that way
+  (*Room backgrounds* option: lossless is the same picture about 20 % smaller),
+  and a hand-made high-resolution background is installed the same way.
+- **HD textures.** Any other texture - models, items, menus, fonts, room masks
+  - can be replaced by dropping `<hash>.webp` into an `HD/` folder beside
+  `USA/` (or into a sub-folder of it, to group a pack by type). Set `DumpTextures=1` to have the game write the originals, named by
+  that hash, to `HD/dump/`.
+- **Model skins.** A character or enemy skin can also be named after its model,
+  `HD/<TREE>/ENEMY/EM1010.webp` (`TREE` = the folder the model was read from).
+- **HD movies.** `HD/USA/MOVIE/OU.mp4` is played ahead of the tree's own
+  `.mp4` / `.avi`.
+- **HD fonts.** Text is drawn in real TrueType fonts instead of the bitmap
+  sheets: Archivo Black for the title menu, Archivo Narrow for the 8x8 text and
+  Libertinus Serif / M PLUS 2 for the in-game messages, item names and files
+  (`HD/<USA|JPN>/Data/TITLEFNT.TTF`, `FONTUS.TTF` / `FONT.TTF`,
+  `FONTUS_14.TTF` / `FONT_14.TTF`). The asset migrator's HD Pack tab installs
+  them; the fonts are under the SIL OFL 1.1.
+
+```ini
+[Textures]
+HdTextures=1     ; use HD/<hash>.webp replacements (default; free with no HD/ folder)
+DumpTextures=0   ; 1 = write every texture to HD/dump/<hash>.png
+```
+
+`docs/HD_TEXTURES.md` explains how to make a pack and what its limits are. The
+asset migrator's **HD Pack** tab imports the Seamless HD Project pack format (made for Classic REbirth) into `HD/`, grouped by texture type:
+backgrounds and masks from a built-in table, model skins under the model's
+name, the Seamless HD Project movies, and the rest by matching against the
+game's own texture dump. Set `HdTextures=0` or in the game settings menu to switch all of HD mode off without
+removing the folder.
 
 ### Options menu (title screen)
 
@@ -325,6 +364,10 @@ portable Qt GUI in `tools/asset_migrator/` (released as
 - **Sega Saturn** — builds the `SATURN/` overlay from a Saturn disc image, and
   copies the Saturn-exclusive outfit into the base tree (`Enemy/EM1061`,
   `EM1161`) for the same reason.
+
+Above the tabs, **Room backgrounds** picks the format every tab leaves its
+backgrounds in: the original `.pak`, or WebP (lossless or lossy, encoded with
+`ffmpeg`), which the game reads in the `.pak`'s place.
 
 The tool's own `README.md` covers building it, its options and the headless
 verifier. The same migrations are scriptable on either platform through the
@@ -540,6 +583,8 @@ backend.
   (MCI on Windows, ffmpeg on Linux).
 - `docs/` — architecture notes: task scheduler, memory layout, classes and
   vtable conventions, implementation plan, and `LINUX_PORT.md` for the port.
+- `src/third_party/` — vendored single-file decoders (`stb_vorbis.c`,
+  `simplewebp.h`); their licences are in `THIRD_PARTY_NOTICES.txt`.
 - `tests/` — build/verification scripts (compile gate, frame comparison).
 - `tools/` — tools used to help decompilation
 

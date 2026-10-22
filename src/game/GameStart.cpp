@@ -12,6 +12,9 @@
 #include <cstdio>
 #include <cstring>
 #include "../system/AssetPath.h"
+#include "../system/HdTextures.h"   // HD item icons (port-only)
+
+extern void LoadImage_SetHdIconKey(const char* key);   // TextureLoader.cpp (port)
 
 extern void setSomeColor(int r, int g, int b);              // 0x00470a50
 extern void empty_40ae40(int);                              // 0x0040ae40 RoomInit.cpp
@@ -591,10 +594,15 @@ void InitializeGame(void)
 
     Task_sleep(1);
 
-    SetupCharacterData();
+    {
+        // Port-only: the player's skin and the weapon effect pages decode
+        // behind the load instead of stalling it (HdTextures.h).
+        HdDeferScope hdDefer;
+        SetupCharacterData();
 
-    g_loadDataDestPointer = g_shootDirEspBuffer;
-    load_shoot_direction_data();
+        g_loadDataDestPointer = g_shootDirEspBuffer;
+        load_shoot_direction_data();
+    }
 
     g_SndFadeType = 0;
     g_loadDataDestPointer = g_DataBuffer;
@@ -690,7 +698,17 @@ void game_start(void)
 // Loads a 20x30 16-bit item image from the buffer into a texture page slot.
 void LoadItemImage(int item_id, int image_index, int img_buffer) // 0x00443000
 {
+    // Port-only: name the icon after the file in the buffer and the item, so
+    // an HD picture of it can stand in (TextureLoader.cpp, HD item icons).
+    char hdKey[180];
+    if (HdTextures_Active() && HdTextures_KeyForBuffer((const void*)img_buffer, hdKey, sizeof(hdKey))[0] != '\0' &&
+        strchr(hdKey, '@') == NULL) {
+        char key[200];
+        snprintf(key, sizeof(key), "%s/%02d", hdKey, item_id);
+        LoadImage_SetHdIconKey(key);
+    }
     LoadImage(item_id * 1200 + img_buffer, 0, image_index + 1, 1, 108, (short)image_index << 5, 20, 30, 2);
+    LoadImage_SetHdIconKey(NULL);
 }
 
 // (0x00481750) - Load attract mode (demo) player save data

@@ -13,7 +13,9 @@
 #include "../platform/platform.h"
 #include "../system/AssetPath.h"
 #include "../system/ConfigFile.h"
+#include "../system/HdTextures.h"
 #include "Bonus.h"
+#include "HdText.h"
 #include "OptionsMenu.h"            // options_render_entity
 #include "SFXIds.h"
 #include "saturn/SaturnBattle.h"
@@ -37,6 +39,9 @@ extern void SetLightMatrix(MATRIX* m);
 #define OPT_HELP_Y       212
 #define OPT_HINT_Y       226
 #define OPT_MAX_ROWS     14
+// With HD textures and the HD 8x8 font (HdText.h), the menu's text is drawn at
+// this fraction of the HD font's normal size; the pixel font is unchanged.
+#define OPT_HD_TEXT_SIZE 0.8f
 
 // PrintText8x8's colour byte: high nibble = brightness in 30ths (0 and 2 both
 // mean full), low nibble = tint (0 white, 1 green, 2 red, 3 grey, else yellow).
@@ -177,6 +182,7 @@ static int s_swallowInput = 0;        // ignore navigation until everything is r
 static int s_cfgInit = 0;
 static int s_cfgMode = GAME_MODE_OG;
 static int s_cfgRegion = 0;
+static int s_cfgHd = 1;               // [Textures] HdTextures, also read at start-up
 static int s_restarting = 0;          // APPLY AND RESTART was confirmed
 
 // --- BONUS -----------------------------------------------------------------
@@ -191,13 +197,41 @@ static int s_previewDirty = 0;        // bonus.dat needs writing
 // ---------------------------------------------------------------------------
 // Drawing
 // ---------------------------------------------------------------------------
+// The text is placed in 8-pixel cells; `anchor` says how the caller aligned it
+// (HD_TEXT_ANCHOR_*), which is what the smaller HD text is drawn towards.
+static void opt_vtext(int anchor, int x, int y, unsigned char colour, const char* fmt,
+                      va_list args)
+{
+    vsnprintf(PRINT_TEXT_BUFFER, sizeof(PRINT_TEXT_BUFFER), fmt, args);
+    HdText_SetPrint8x8Size(OPT_HD_TEXT_SIZE, anchor);
+    PrintText8x8((short)x, (short)y, colour, 0);
+    HdText_SetPrint8x8Size(1.0f, HD_TEXT_ANCHOR_LEFT);
+}
+
 static void opt_text(int x, int y, unsigned char colour, const char* fmt, ...)
 {
     va_list args;
     va_start(args, fmt);
-    vsnprintf(PRINT_TEXT_BUFFER, sizeof(PRINT_TEXT_BUFFER), fmt, args);
+    opt_vtext(HD_TEXT_ANCHOR_LEFT, x, y, colour, fmt, args);
     va_end(args);
-    PrintText8x8((short)x, (short)y, colour, 0);
+}
+
+// The same for text the caller right-aligns (it ends at x + strlen * 8) ...
+static void opt_text_right(int x, int y, unsigned char colour, const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    opt_vtext(HD_TEXT_ANCHOR_RIGHT, x, y, colour, fmt, args);
+    va_end(args);
+}
+
+// ... and centres (on x + strlen * 4).
+static void opt_text_centre(int x, int y, unsigned char colour, const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    opt_vtext(HD_TEXT_ANCHOR_CENTRE, x, y, colour, fmt, args);
+    va_end(args);
 }
 
 // A filled rectangle in screen coordinates (top-left origin). `blend` is
@@ -356,9 +390,9 @@ static void opt_draw_rows(int cursor, int width)
             const int len = (int)strlen(r->value);
             const int right = OPT_ROW_X + width;
             if (r->arrows && r->enabled && i == cursor) {
-                opt_text(right - (len + 4) * 8, y, colour, "< %s >", r->value);
+                opt_text_right(right - (len + 4) * 8, y, colour, "< %s >", r->value);
             } else {
-                opt_text(right - (len + 2) * 8, y, colour, "%s", r->value);
+                opt_text_right(right - (len + 2) * 8, y, colour, "%s", r->value);
             }
         }
     }
@@ -935,7 +969,8 @@ static void page_game(unsigned int nav)
     if (s_restarting) nav = 0;
 
     s_rowCount = 0;
-    const int restart = (s_cfgMode != g_GameMode) || (s_cfgRegion != GetAssetVersion());
+    const int restart = (s_cfgMode != g_GameMode) || (s_cfgRegion != GetAssetVersion()) ||
+                        (s_cfgHd != (HdTextures_ReplaceEnabled() ? 1 : 0));
 
     OptRow* r = opt_row("GAME MODE", "WHICH RELEASE TO PLAY. NEEDS RESTART");
     opt_row_value(r, mode_label(s_cfgMode), 1);
@@ -968,8 +1003,11 @@ static void page_game(unsigned int nav)
     r = opt_row("WESTERN DIFFICULTY", "PS1/SATURN USA RULES IN ORIGINAL MODE");
     opt_row_value(r, g_bWesternDifficultyOption ? "ON" : "OFF", 1);
 
-    r = opt_row("APPLY AND RESTART", restart ? "RESTART THE GAME NOW IN THE NEW MODE"
-                                             : "MODE AND REGION ARE UNCHANGED");
+    r = opt_row("HD MODE", "HD BACKGROUNDS, TEXTURES AND FONTS. NEEDS RESTART");
+    opt_row_value(r, s_cfgHd ? "ON" : "OFF", 1);
+
+    r = opt_row("APPLY AND RESTART", restart ? "RESTART THE GAME NOW WITH THE NEW SETTINGS"
+                                             : "MODE, REGION AND HD MODE ARE UNCHANGED");
     r->enabled = restart;
     opt_row("BACK", NULL);
 
@@ -1011,6 +1049,11 @@ static void page_game(unsigned int nav)
         case 5: g_bSaturnBattleGame = !g_bSaturnBattleGame; opt_sfx(SFX_TITLE_TYPE01); break;
         case 6: g_bWesternDifficultyOption = !g_bWesternDifficultyOption; opt_sfx(SFX_TITLE_TYPE01); break;
         case 7:
+            s_cfgHd = !s_cfgHd;
+            ConfigFile_SetHdTextures(s_cfgHd);
+            opt_sfx(SFX_TITLE_TYPE01);
+            break;
+        case 8:
             // Everything the new process reads has to be on disk before the
             // restart is asked for: the exit-time save does not write the
             // mode or the region (ConfigFile.h).
@@ -1022,7 +1065,7 @@ static void page_game(unsigned int nav)
                 plat_request_restart();
             }
             break;
-        case 8:
+        case 9:
             if (nav & NAV_CONFIRM) { opt_goto(PAGE_ROOT); return; }
             break;
         }
@@ -1034,7 +1077,7 @@ static void page_game(unsigned int nav)
     if (s_restarting) {
         opt_text(OPT_ROW_X, OPT_HELP_Y - 14, COL_GOOD, "RESTARTING...");
     } else if (restart) {
-        opt_text(OPT_ROW_X, OPT_HELP_Y - 14, COL_GOOD, "MODE/REGION CHANGE NEEDS A RESTART");
+        opt_text(OPT_ROW_X, OPT_HELP_Y - 14, COL_GOOD, "THIS CHANGE NEEDS A RESTART");
     }
 }
 
@@ -1276,8 +1319,8 @@ static void page_bonus(unsigned int nav)
         if (s_previewWeaponItem != 0 && *cursor >= BONUS_CHAR_COUNT && *cursor < backRow) {
             what = bonus_weapon_name(s_bonusWeapons[*cursor - BONUS_CHAR_COUNT]);
         }
-        opt_text(PREVIEW_CENTER_X - (int)strlen(who) * 4, 30, COL_NORMAL, "%s", who);
-        opt_text(PREVIEW_CENTER_X - (int)strlen(what) * 4, 202, COL_DISABLED, "%s", what);
+        opt_text_centre(PREVIEW_CENTER_X - (int)strlen(who) * 4, 30, COL_NORMAL, "%s", who);
+        opt_text_centre(PREVIEW_CENTER_X - (int)strlen(what) * 4, 202, COL_DISABLED, "%s", what);
     }
     preview_draw();
 }
@@ -1303,6 +1346,7 @@ void game_options_state(void)
         s_cfgInit = 1;
         s_cfgMode = g_GameMode;
         s_cfgRegion = GetAssetVersion();
+        s_cfgHd = HdTextures_ReplaceEnabled() ? 1 : 0;
     }
     display_build_resolutions();
 
@@ -1386,6 +1430,7 @@ void ingame_options_menu(void)
         s_cfgInit = 1;
         s_cfgMode = g_GameMode;
         s_cfgRegion = GetAssetVersion();
+        s_cfgHd = HdTextures_ReplaceEnabled() ? 1 : 0;
     }
     display_build_resolutions();
 

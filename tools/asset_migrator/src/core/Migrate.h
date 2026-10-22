@@ -2,6 +2,7 @@
 // Entry points for the two migrations the GUI drives.
 
 #include "core/AudioWriter.h"
+#include "core/BackgroundWebp.h"
 #include "core/Types.h"
 
 #include <string>
@@ -55,6 +56,14 @@ struct PcMigrationOptions {
     // WAV, or Ogg Vorbis at ps1AudioOggQuality (needs ffmpeg with libvorbis).
     bool ps1AudioOgg = false;
     int ps1AudioOggQuality = 6;
+
+    // The format the tree's room backgrounds are left in (core/BackgroundWebp.h).
+    // Pak is what the game has always read; the WebP formats convert every
+    // Stage*/RC*.pak once the migration is done and need ffmpeg with libwebp.
+    BackgroundFormat backgroundFormat = BackgroundFormat::Pak;
+    int webpQuality = 90;           // libwebp quality when the format is lossy
+    // With a WebP format neither source is needed: the run then only converts
+    // the backgrounds of the tree that is already there.
 };
 
 struct DcMigrationOptions {
@@ -78,6 +87,11 @@ struct DcMigrationOptions {
     // overlay's Data folder is never searched for them. Only the JPN discs
     // carry the files; a disc without them is skipped, not an error.
     bool fmvSubtitles = true;
+    // The format the overlay's room backgrounds are left in (core/BackgroundWebp.h).
+    // Pak is what the game has always read; the WebP formats convert every
+    // Stage*/RC*.pak once the migration is done and need ffmpeg with libwebp.
+    BackgroundFormat backgroundFormat = BackgroundFormat::Pak;
+    int webpQuality = 90;           // libwebp quality when the format is lossy
 };
 
 struct SaturnMigrationOptions {
@@ -133,10 +147,16 @@ struct SaturnMigrationOptions {
     std::string ffmpegPath = "ffmpeg";
     // Re-read everything written and check it.
     bool verify = true;
+    // The format the overlay's room backgrounds are left in (core/BackgroundWebp.h).
+    // Pak is what the game has always read; the WebP formats convert every
+    // Stage*/RC*.pak once the migration is done and need ffmpeg with libwebp.
+    BackgroundFormat backgroundFormat = BackgroundFormat::Pak;
+    int webpQuality = 90;           // libwebp quality when the format is lossy
 };
 
 // migratePcAssets runs the base-tree copy when sourcePath is set, then the PS1
-// supplement when ps1ImagePath is set; at least one of the two is required.
+// supplement when ps1ImagePath is set, then the background format pass; at
+// least one of the two sources is required unless a WebP format is selected.
 // Both return true on success; on failure `error` carries a human-readable
 // message. Cancellation through `progress.cancelled` returns false with
 // "cancelled" as the error.

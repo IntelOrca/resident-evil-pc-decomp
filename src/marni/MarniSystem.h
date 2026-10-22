@@ -11,6 +11,13 @@
 // Game-layer code must NOT include <d3d11.h> — only MarniSystem.h.
 #pragma once
 
+// Port-only (HD textures, MarniSystem.cpp): swap in the HD pictures that were
+// still decoding when their textures were uploaded during a load - once per
+// frame - and tell whether any are still on their way (the door animation
+// waits for them, as the PlayStation's waited for the CD).
+void MarniHd_PumpDeferred(void);
+bool MarniHd_DeferredPending(void);
+
 #include "../platform/types.h"
 #include "MarniBits.h"
 #include "MarniDX.h"
@@ -163,8 +170,17 @@ void  MarniGetRenderScale(float* outScaleX, float* outScaleY);
 // Create a texture from raw host pixels; returns an opaque MarniHandle.
 // bpp may be 4, 8, 16, 24, or 32. On success the handle is written to
 // *outTex (if non-NULL) and the function returns TRUE, otherwise FALSE.
+// A 32-bit image is looked up in the HD texture layer first and may come back
+// as a larger texture; callers keep their own logical size.
 BOOL  MarniCreateTexture(int width, int height, int bpp, const void* pixelData,
                          MarniHandle* outTex);
+
+// Port-only: the same upload for 32-bit RGBA8 with the HD texture lookup
+// (system/HdTextures.h) left out. For an image that already IS the player's
+// replacement - a room background read from a .webp at its own resolution -
+// where hashing megabytes of pixels to look for a second one is wasted work.
+BOOL  MarniCreateTextureRaw(int width, int height, const void* rgba,
+                            MarniHandle* outTex);
 
 // STP knock-out twin of a model texture handle: a copy of the same texture
 // holding ONLY its opaque texels (every texel whose palette entry carries the

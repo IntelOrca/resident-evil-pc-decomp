@@ -29,6 +29,12 @@ file(GLOB_RECURSE RE1AM_CORE CONFIGURE_DEPENDS
 
 add_library(re1assets_core STATIC ${RE1AM_CORE})
 target_include_directories(re1assets_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+# The game's vendored WebP decoder (simplewebp.h), used to read back the
+# backgrounds core/BackgroundWebp.cpp writes with the decoder the game uses.
+target_include_directories(re1assets_core PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../src/third_party"
+    # HdTextureHash.h: the game's texture naming, for core/HdPack.cpp.
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../src/system")
 target_compile_features(re1assets_core PUBLIC cxx_std_17)
 if(MSVC)
     target_compile_options(re1assets_core PRIVATE /W3 /utf-8)

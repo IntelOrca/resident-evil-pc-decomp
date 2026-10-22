@@ -35,6 +35,9 @@
 
 #include "core/Assets.h"
 #include "core/AudioWriter.h"
+#include "core/BackgroundWebp.h"
+#include "core/HdFonts.h"
+#include "core/HdPack.h"
 #include "core/Bss.h"
 #include "core/DiscImage.h"
 #include "core/Jimaku.h"
@@ -264,6 +267,106 @@ int cmdJimaku(const std::string& image, const std::string& outDir) {
     return written > 0 ? 0 : 1;
 }
 
+// "--webp" (lossless) and "--webp-q N" (lossy at quality N): the format the
+// migration leaves its room backgrounds in.
+void parseBackgroundArg(int argc, char** argv, int* i, BackgroundFormat* format,
+                        int* quality) {
+    if (std::strcmp(argv[*i], "--webp") == 0) {
+        *format = BackgroundFormat::WebpLossless;
+    } else if (std::strcmp(argv[*i], "--webp-q") == 0 && *i + 1 < argc) {
+        *format = BackgroundFormat::WebpLossy;
+        *quality = std::atoi(argv[++*i]);
+    }
+}
+
+// Convert the backgrounds of an existing tree in place, or with "check" only
+// decode every RC*.webp in it and report the sizes.
+int cmdBgWebp(int argc, char** argv) {
+    const std::string tree = argv[2];
+    re1::Progress p = consoleProgress();
+    std::string err;
+    if (argc >= 4 && std::strcmp(argv[3], "check") == 0) {
+        int count = 0, bad = 0;
+        for (const auto& d : listDirectory(tree)) {
+            const std::string dir = joinPath(tree, d);
+            if (toLower(d).rfind("stage", 0) != 0 || !isDirectory(dir)) continue;
+            for (const auto& f : listDirectory(dir)) {
+                if (extensionOf(f) != ".webp") continue;
+                std::vector<uint8_t> file, rgba;
+                int w = 0, h = 0;
+                ++count;
+                if (!readFile(joinPath(dir, f), &file) ||
+                    !decodeWebp(file, &rgba, &w, &h)) {
+                    std::printf("FAIL %s/%s\n", d.c_str(), f.c_str());
+                    ++bad;
+                } else if (w != kBackgroundWidth || h != kBackgroundHeight) {
+                    std::printf("  %s/%s is %dx%d\n", d.c_str(), f.c_str(), w, h);
+                }
+            }
+        }
+        std::printf("%d .webp background(s), %d undecodable\n", count, bad);
+        return bad ? 1 : 0;
+    }
+    BackgroundFormatOptions o;
+    o.format = BackgroundFormat::WebpLossless;
+    for (int i = 3; i < argc; ++i) {
+        parseBackgroundArg(argc, argv, &i, &o.format, &o.quality);
+        if (std::strcmp(argv[i], "--pak") == 0) o.format = BackgroundFormat::Pak;
+        if (std::strcmp(argv[i], "--ffmpeg") == 0 && i + 1 < argc) o.ffmpegPath = argv[++i];
+    }
+    if (!applyBackgroundFormat(tree, o, p, &err)) {
+        std::printf("ERROR: %s\n", err.c_str());
+        return 1;
+    }
+    return 0;
+}
+
+// Import a Classic REbirth HD pack into <target>/HD.
+int cmdHdPack(int argc, char** argv) {
+    HdPackOptions o;
+    o.packDir = argv[2];
+    o.targetRoot = argv[3];
+    o.tree = (argc >= 5 && std::string(argv[4]) == "JPN") ? AssetVersion::JPN
+                                                          : AssetVersion::USA;
+    for (int i = 4; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--ffmpeg") == 0 && i + 1 < argc) o.ffmpegPath = argv[++i];
+        // The hires folder is the Director's Cut set (bio1dc\hires).
+        if (std::strcmp(argv[i], "--dc") == 0) o.game = HdPackGame::DirectorsCut;
+    }
+    re1::Progress p = consoleProgress();
+    p.step = [](int, int, const std::string&) { return true; };
+    std::string err;
+    if (!importHdPack(o, p, &err)) {
+        std::printf("ERROR: %s\n", err.c_str());
+        return 1;
+    }
+    return 0;
+}
+
+// Copy the Seamless HD Project's movie folder into <target>/<tree>/Movie.
+int cmdHdMovies(int argc, char** argv) {
+    HdMovieOptions o;
+    o.movieDir = argv[2];
+    o.targetRoot = argv[3];
+    o.tree = (argc >= 5 && std::string(argv[4]) == "JPN") ? AssetVersion::JPN
+                                                          : AssetVersion::USA;
+    for (int i = 4; i + 1 < argc; ++i) {
+        const std::string v = argv[i + 1];
+        if (std::strcmp(argv[i], "--capcom") == 0)
+            o.capcom = v == "cubes" ? HdCapcomIntro::Cubes : HdCapcomIntro::Original;
+        if (std::strcmp(argv[i], "--dm7") == 0)
+            o.dm7 = v == "jill" ? HdDm7Clip::JillScene : HdDm7Clip::Original;
+    }
+    re1::Progress p = consoleProgress();
+    p.step = [](int, int, const std::string&) { return true; };
+    std::string err;
+    if (!importHdMovies(o, p, &err)) {
+        std::printf("ERROR: %s\n", err.c_str());
+        return 1;
+    }
+    return 0;
+}
+
 int cmdPc(int argc, char** argv) {
     PcMigrationOptions o;
     o.sourcePath = std::strcmp(argv[2], "-") == 0 ? "" : argv[2];
@@ -283,10 +386,15 @@ int cmdPc(int argc, char** argv) {
         if (std::strcmp(argv[i], "--ps1-audio") == 0) o.ps1Audio = true;
         if (std::strcmp(argv[i], "--ps1-ogg") == 0) o.ps1AudioOgg = true;
         if (std::strcmp(argv[i], "--ffmpeg") == 0 && i + 1 < argc) o.ffmpegPath = argv[++i];
+        parseBackgroundArg(argc, argv, &i, &o.backgroundFormat, &o.webpQuality);
     }
     re1::Progress p = consoleProgress();
     std::string err;
-    return migratePcAssets(o, p, &err) ? 0 : 1;
+    if (!migratePcAssets(o, p, &err)) {
+        std::printf("ERROR: %s\n", err.c_str());
+        return 1;
+    }
+    return 0;
 }
 
 int cmdDc(int argc, char** argv) {
@@ -301,10 +409,16 @@ int cmdDc(int argc, char** argv) {
         if (std::strcmp(argv[i], "--no-movies") == 0) o.convertMovies = false;
         if (std::strcmp(argv[i], "--no-subs") == 0) o.fmvSubtitles = false;
         if (std::strcmp(argv[i], "--no-verify") == 0) o.verify = false;
+        if (std::strcmp(argv[i], "--ffmpeg") == 0 && i + 1 < argc) o.ffmpegPath = argv[++i];
+        parseBackgroundArg(argc, argv, &i, &o.backgroundFormat, &o.webpQuality);
     }
     re1::Progress p = consoleProgress();
     std::string err;
-    return migrateDcAssets(o, p, &err) ? 0 : 1;
+    if (!migrateDcAssets(o, p, &err)) {
+        std::printf("ERROR: %s\n", err.c_str());
+        return 1;
+    }
+    return 0;
 }
 
 int cmdSaturn(int argc, char** argv) {
@@ -320,6 +434,7 @@ int cmdSaturn(int argc, char** argv) {
         if (std::strcmp(argv[i], "--ogg-q") == 0 && i + 1 < argc) o.oggQuality = std::atoi(argv[++i]);
         if (std::strcmp(argv[i], "--ffmpeg") == 0 && i + 1 < argc) o.ffmpegPath = argv[++i];
         if (std::strcmp(argv[i], "--no-verify") == 0) o.verify = false;
+        parseBackgroundArg(argc, argv, &i, &o.backgroundFormat, &o.webpQuality);
     }
     re1::Progress p = consoleProgress();
     p.step = [](int, int, const std::string&) { return true; };
@@ -600,7 +715,27 @@ bool testTitleFont() {
     if (checkTitleFont(bad, nullptr)) return false;
     bad = f;
     bad[0] = 'X';
-    return !checkTitleFont(bad, nullptr);
+    if (checkTitleFont(bad, nullptr)) return false;
+    // The HD fonts (core/HdFonts.h): each a whole TrueType font, refused when
+    // cut short or not TrueType.
+    const std::vector<uint8_t> fonts[4] = { buildHdTitleFont(), buildHdTextFont(),
+                                            buildHdText14Font(AssetVersion::USA),
+                                            buildHdText14Font(AssetVersion::JPN) };
+    for (int f = 0; f < 4; ++f) {
+        const std::vector<uint8_t>& t = fonts[f];
+        int tables = 0;
+        if (!checkHdFont(t, &tables) || tables < 9) return false;
+        bad = t;
+        bad.resize(bad.size() / 2);
+        if (checkHdFont(bad, nullptr)) return false;
+        bad = t;
+        bad[0] = 'X';
+        if (checkHdFont(bad, nullptr)) return false;
+    }
+    return std::strcmp(hdTextFontName(AssetVersion::USA), "FONTUS.TTF") == 0 &&
+           std::strcmp(hdTextFontName(AssetVersion::JPN), "FONT.TTF") == 0 &&
+           std::strcmp(hdText14FontName(AssetVersion::USA), "FONTUS_14.TTF") == 0 &&
+           std::strcmp(hdText14FontName(AssetVersion::JPN), "FONT_14.TTF") == 0;
 }
 
 int cmdSelfTest() {
@@ -975,6 +1110,9 @@ int main(int argc, char** argv) {
         return cmdExtract(argv[2], argv[3], argc >= 5 ? argv[4] : "");
     if (cmd == "jimaku" && argc >= 4) return cmdJimaku(argv[2], argv[3]);
     if (cmd == "pc" && argc >= 5) return cmdPc(argc, argv);
+    if (cmd == "bgwebp" && argc >= 3) return cmdBgWebp(argc, argv);
+    if (cmd == "hdpack" && argc >= 4) return cmdHdPack(argc, argv);
+    if (cmd == "hdmovies" && argc >= 4) return cmdHdMovies(argc, argv);
     if (cmd == "dc" && argc >= 5) return cmdDc(argc, argv);
     if (cmd == "ps1audio" && argc >= 4) return cmdPs1Audio(argc, argv);
     if (cmd == "bgm" && argc >= 5) return cmdBgm(argv[2], argv[3], argv[4]);
@@ -990,6 +1128,18 @@ int main(int argc, char** argv) {
         // migration.
         if (!testTitleFont() || !writeFile(argv[2], buildTitleFont())) return 1;
         std::printf("wrote %s\n", argv[2]);
+        return 0;
+    }
+    if (cmd == "hdfonts" && argc >= 3) {
+        // re1am_selftest hdfonts TARGET [jpn] - the HD fonts as the HD Pack tab
+        // writes them, into TARGET/HD/<USA|JPN>/Data (core/HdFonts.h).
+        const AssetVersion tree = (argc >= 4 && std::string(argv[3]) == "jpn")
+                                      ? AssetVersion::JPN : AssetVersion::USA;
+        std::string error;
+        if (!testTitleFont() || !writeHdFonts(argv[2], tree, consoleProgress(), &error)) {
+            std::printf("ERROR: %s\n", error.c_str());
+            return 1;
+        }
         return 0;
     }
     if (cmd == "satemd" && argc >= 4)
