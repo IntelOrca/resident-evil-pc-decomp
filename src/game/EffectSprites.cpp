@@ -521,6 +521,32 @@ static bool effspr_page_within_file(const DWORD* page, const DWORD* file)
     return true;
 }
 
+// Port-only: g_effectSpriteStpRows' mask for one sheet TIM. A row counts as
+// STP when most of its non-zero entries (0x0000 is the transparent key and
+// never drawn) carry bit 15. The shipped rows are all-or-nothing apart from a
+// stray black entry, so the majority is the row's rule.
+static unsigned char effect_tim_stp_rows(const unsigned char* tim)
+{
+    if (tim == NULL || *(const unsigned int*)tim != 0x10) return 0;
+    if ((*(const unsigned int*)(tim + 4) & 8) == 0) return 0;     // no CLUT
+    unsigned int clutW = *(const unsigned short*)(tim + 16);
+    unsigned int clutH = *(const unsigned short*)(tim + 18);
+    if (clutW == 0 || clutW > 256) return 0;
+    if (clutH > 4) clutH = 4;
+    const unsigned short* clut = (const unsigned short*)(tim + 20);
+    unsigned char mask = 0;
+    for (unsigned int r = 0; r < clutH; r++) {
+        int stp = 0, opaque = 0;
+        for (unsigned int i = 1; i < clutW; i++) {
+            unsigned short c = clut[r * clutW + i];
+            if (c == 0) continue;
+            if (c & 0x8000) stp++; else opaque++;
+        }
+        if (stp > opaque) mask |= (unsigned char)(1u << r);
+    }
+    return mask;
+}
+
 static void load_effect_sprites(void)
 {
     // The room's esp sprites use sheet slots 8-11 (the weapon FX hold 0-7),
@@ -564,6 +590,7 @@ static void load_effect_sprites(void)
             if (clutH > 1) rows = clutH;
         }
         g_effectSpriteClutRows[type] = (unsigned char)rows;
+        g_effectSpriteStpRows[type] = effect_tim_stp_rows(tim);
     }
 
     // Composite each declared room sprite into its page buffer (CLUT row 0 -
@@ -814,6 +841,43 @@ void RebakeWeaponSheetsForRoom(void)
     }
 }
 
+// ============================================================================
+// apply_dc_shoot_camera_glass_fix - port-added, no original address.
+//
+// The shoot-the-camera easter egg (weapon_shoot_camera_effect) spawns type 5,
+// animation 2 (depthGroup 0x12). In core00.esp that animation has two phases:
+//   phase 1: behaviour 0x1F (set frame 0x12), update 0x02 (timer, 0 ticks)
+//   phase 2: behaviour 0x36 (effect_behavior_random_spin)
+// The 1997 PC release and the PS1 original (SLUS_001.70) ship this data
+// as-is, so the glass jitters by +-5/15 units a frame, 512 units from the lens,
+// for as long as its sprite animation runs (about a second). The PS1
+// Director's Cut changed exactly ONE byte of CORE00.ESP (file offset 0x1E0,
+// 0x36 -> 0x00): phase 2's behaviour id becomes 0, which is the pool's "free"
+// marker, so the glass shows for one or two frames and never moves. The port
+// takes the Director's Cut behaviour in every mode.
+//
+// It writes 0x2F (effect_behavior_kill) rather than the DC's 0x00. A slot whose
+// id is zeroed by a phase change is dropped without g_freeEffectSlots++, so the
+// DC data leaks one pool count per glass sprite until the next room load (64
+// camera shots in one room and no effect spawns any more). Kill frees the slot
+// properly; the glass is drawn on the spawn frame and the one after it.
+//
+// The patch only touches the loaded buffer, and only when the block has the
+// shape and values above, so a modified core00.esp is left alone.
+// ============================================================================
+static void apply_dc_shoot_camera_glass_fix(void)
+{
+    if (g_effectAnimData[5] == 0 || g_effectAnimData[5] == 0xFFFFFFFF) return;
+    unsigned char* animBase = (unsigned char*)g_effectAnimData[5];
+    unsigned int* table = (unsigned int*)(animBase + (unsigned int)animBase[2] * 4);
+    if (table[0] != 1 || table[1] != 2) return;            // one slot, two phases
+    unsigned char* phase1 = (unsigned char*)&table[2];
+    unsigned char* phase2 = phase1 + 0x18;
+    if (phase1[0] != 0x1F || phase1[1] != 0x02) return;
+    if (phase2[0] != 0x36 && phase2[0] != 0x00) return;   // PC/PS1 OG or DC file
+    phase2[0] = 0x2F;
+}
+
 void load_shoot_direction_data(void)
 {
     g_freeEffectSlots = 0x40;
@@ -835,6 +899,7 @@ void load_shoot_direction_data(void)
     unsigned char* espEnd = espBase + (size & 0xfffffffc) + ((size & 3) ? 4 : 0) - 4;
     g_loadDataDestPointer = espEnd;
     unsigned char lastValid = load_effect_sprite_data(espBase, espEnd, espBase, 0);
+    apply_dc_shoot_camera_glass_fix();
 
     // 0x0045fc0f: load core00.etm; its trailing dwords are per-sprite image
     // offsets relative to the etm buffer.
@@ -845,6 +910,14 @@ void load_shoot_direction_data(void)
                           + ((size & 3) ? 4 : 0);
     for (unsigned char i = 0; i < lastValid; i++) {
         DAT_00ac9cd0[i] = (int)g_DataBuffer + *(int*)(etmEnd - 4 - i * 4);
+        // Port-only: the PS1 STP rows of each weapon sheet. core00.etm keeps
+        // them (it is byte-identical to the PS1 disc's); the Effspr pages the
+        // sheets are baked from below do not.
+        unsigned char type = g_abEffSpriteIndexTable[i];
+        if (type < 50) {
+            g_effectSpriteStpRows[type] =
+                effect_tim_stp_rows((const unsigned char*)DAT_00ac9cd0[i]);
+        }
     }
 
     setup_effect_sprite_textures(0);
@@ -920,6 +993,7 @@ void InitRoomEffSprite(void)
             g_effectSpriteSheetSlot[spriteIdx] = 0xFF;
             g_effectSpritePageV[spriteIdx] = 0;
             g_effectSpriteClutRows[spriteIdx] = 0;
+            g_effectSpriteStpRows[spriteIdx] = 0;
         }
     } while (i < 8);
 

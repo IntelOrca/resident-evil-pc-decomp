@@ -4240,32 +4240,50 @@ static unsigned int player_reticle_enemy(void)
 }
 
 // ============================================================================
-// weapon_lockon_effect @ 0x0045a650
-// Auto-aim lock-on visual: a fan of target billboards (type 5, depth 0x12,
-// sprite g_deadMoveValue) jittered around the current camera position, aimed
-// at the camera. The shotgun sprays four, everything else one. Runs when the
-// auto-aim raise starts for weapons 2-5.
+// weapon_shoot_camera_effect @ 0x0045a650
+// (PS1 Director's Cut: FUN_80042540 in SLUS_005.51, the same code line for line)
+//
+// The "shoot the camera" easter egg: when the gun points straight at the
+// current camera's eye, bullet-hole / cracked-glass billboards (type 5,
+// depthGroup 0x12, identity parent matrix g_deadMoveValue) are spawned just in
+// front of the lens. The shotgun scatters four, everything else one. Runs once
+// as the auto-aim fire starts, for weapons 2-5.
+//
+// The camera record (RDT+0x9C, 0x2C bytes per camera) starts with the eye
+// (v[0..2]) and the look-at point (v[3..5]).
+//
+// The aim test: two points either side of the eye (offset (isShotgun+1)*0xA0
+// across the view direction, and (isShotgun*5 +/- 5)*0x20 up/down) are taken
+// relative to the right-hand joint (0xE) and crossed with the gun direction
+// (the joint's rotation applied to (isShotgun*400, 1000, 0)). The eye is hit
+// when the gun direction lies between the two points on every axis. The .y
+// component is the horizontal (XZ) cross product, and requiring edgeL.y < 0
+// and edgeR.y >= 0 is what makes the test directional: pointing the gun AWAY
+// from the camera flips both signs and fails.
 // ============================================================================
-static void weapon_lockon_effect(void)
+static void weapon_shoot_camera_effect(void)
 {
     if (g_playerEntity.equippedWeaponId > 5) return;
     unsigned char isShotgun = (g_playerEntity.equippedWeaponId == 3) ? 1 : 0;
 
-    // Camera record for the current camera, 8 dwords at RDT+0x9C
+    // Camera record for the current camera, 8 dwords at RDT+0x9C:
+    // v[0..2] = eye, v[3..5] = look-at
     int* cam = (int*)((char*)g_RdtPointer + (unsigned int)g_roomCameraId * 0x2c + 0x9c);
     int v[8];
     for (int i = 0; i < 8; i++) v[i] = cam[i];
 
-    int dz = v[3] - v[0];          // camera span Z
-    int dx = v[5] - v[2];          // camera span X
+    int viewX = v[3] - v[0];       // view direction X (look-at - eye)
+    int viewZ = v[5] - v[2];       // view direction Z
 
-    g_animFrameIdSave = ((dx > 0) ? 0x800 : 0) + 0x400;
-    if (dz != 0) {
-        g_animFrameIdSave = ((dz < 0) ? 2 : 1) * 0x800
-                            - (unsigned int)GetAngleQuadrantValue((dx * 0x1000) / dz);
+    // Camera yaw. 0x0045a6d7: ESI = 2 - (viewX < 0), i.e. 0x1000 when the
+    // view X is positive and 0x800 when negative (PS1: same constants).
+    g_animFrameIdSave = ((viewZ > 0) ? 0x800 : 0) + 0x400;
+    if (viewX != 0) {
+        g_animFrameIdSave = ((viewX < 0) ? 1 : 2) * 0x800
+                            - (unsigned int)GetAngleQuadrantValue((viewZ * 0x1000) / viewX);
     }
 
-    // Aiming fan: rotate (isShotgun+1)*0xa0 by the camera angle
+    // The across-the-view offset: (isShotgun+1)*0xa0 rotated by the camera yaw
     JointStruct* joints = g_playerEntity.jointsStructs;
     g_svecScratch.x = (short)((isShotgun + 1) * 0xa0);
     g_svecScratch.y = 0;
@@ -4278,14 +4296,17 @@ static void weapon_lockon_effect(void)
     int wy = joints[0xe].world.t[1];
     int wz = joints[0xe].world.t[2];
 
+    // Both edges are relative to the EYE (v[0..2]) - 0x0045a77b reads the
+    // record's first dword for edgeL.x as well as edgeR.x.
     VECTOR edgeL, edgeR, aimVec;
-    edgeL.x = (v[3] - wx + g_svecScratch.x) / 0x12;
+    edgeL.x = (v[0] - wx + g_svecScratch.x) / 0x12;
     edgeL.z = (v[2] - wz + g_svecScratch.z) / 0x12;
     edgeL.y = (v[1] - wy + (int)((isShotgun * 5 + 5) * 0x20)) / 0x12;
     edgeR.x = (v[0] - wx - g_svecScratch.x) / 0x12;
     edgeR.z = (v[2] - wz - g_svecScratch.z) / 0x12;
     edgeR.y = (v[1] - wy + (int)((isShotgun * 5 - 5) * 0x20)) / 0x12;
 
+    // Gun direction: the hand joint's rotation applied to (isShotgun*400, 1000, 0)
     g_svecScratch.x = (short)(isShotgun * 400);
     g_svecScratch.y = 1000;
     g_svecScratch.z = 0;
@@ -4293,16 +4314,17 @@ static void weapon_lockon_effect(void)
     vectorMul3(&aimVec, &edgeL, &edgeL);
     vectorMul3(&aimVec, &edgeR, &edgeR);
 
-    // The fan only draws when the camera is inside the wedge
+    // The gun must point between the two edges on every axis
     if (((unsigned int)edgeL.y & 0x80000000u) == 0) return;
     if (((unsigned int)edgeR.y & 0x80000000u) != 0) return;
     if ((((unsigned int)edgeR.x ^ (unsigned int)edgeL.x) & 0x80000000u) == 0) return;
     if ((((unsigned int)edgeR.z ^ (unsigned int)edgeL.z) & 0x80000000u) == 0) return;
 
-    // Jittered billboards around the camera position
-    g_playerPosScratch.x = dz;
-    g_playerPosScratch.y = v[5] - v[3];
-    g_playerPosScratch.z = dx;
+    // Spawn point: 512 units (ONE/8) down the view direction from the eye,
+    // jittered by up to +/-0x80 per axis.
+    g_playerPosScratch.x = viewX;
+    g_playerPosScratch.y = v[4] - v[1];
+    g_playerPosScratch.z = viewZ;
     VectorNormal(&g_playerPosScratch, &g_playerPosScratch);
 
     g_playerPosScratch.x = (g_playerPosScratch.x / 8 - (rand() & 0xff)) + v[0] + 0x80;
@@ -4628,8 +4650,8 @@ static void player_behavior_13_gun_hold_input(void)
 
 // ============================================================================
 // player_behavior_14_autoaim_raise @ 0x00458090 - auto-aim fire, state 0
-// Sets the auto-aim raise pose (motion (dir+2)*3), spawns the lock-on fan
-// billboards, then runs the fire state in the same frame.
+// Sets the auto-aim raise pose (motion (dir+2)*3), runs the shoot-the-camera
+// check, then runs the fire state in the same frame.
 // ============================================================================
 static void player_behavior_14_autoaim_fire(void);
 static void player_behavior_14_autoaim_raise(void)
@@ -4640,7 +4662,7 @@ static void player_behavior_14_autoaim_raise(void)
     g_playerEntity.unk_8c = 3;
     g_playerEntity.attackAnim = (unsigned char)
         ((((g_playerEntity.weaponAimFlags & 0x20) >> 4) + (g_playerEntity.weaponAimFlags >> 7) + 2) * 3);
-    weapon_lockon_effect();
+    weapon_shoot_camera_effect();
     if ((g_main_state_flags2 & MSF2_EFFECT_ZONE) != 0) {
         PlayEntitySnd(1);
     }
