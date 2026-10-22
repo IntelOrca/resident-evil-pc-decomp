@@ -191,7 +191,13 @@ if(RE1_M32_LIBDIR STREQUAL "")
 endif()
 message(STATUS "32-bit library directory: ${RE1_M32_LIBDIR}")
 
-target_compile_options(residentevil PRIVATE -m32 -w)
+# -fno-strict-aliasing / -fno-strict-overflow: the decomp keeps the original's
+# MSVC assumptions - model/TMD/matrix data is read by casting raw buffers to
+# structs, and Ghidra-derived signed math relies on wrap-around. GCC's -O2
+# optimises on both being impossible; with them on, a Release build drew no 3D
+# models at all (backgrounds fine) on Arch's GCC.
+target_compile_options(residentevil PRIVATE -m32 -w
+    -fno-strict-aliasing -fno-strict-overflow)
 # -rdynamic: keep the dynamic symbol table so crash.cpp's backtrace can
 # name functions instead of printing bare addresses.
 # -L ahead of every library: the linker takes the first -L that matches, so the
