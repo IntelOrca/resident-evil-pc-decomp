@@ -535,7 +535,16 @@ every push to `main` as a compile check, and attaches the zip to the GitHub
 release when release-please cuts one. ffmpeg is not bundled, so players need it
 on `PATH` (or browsed to) for the movie conversions.
 
-The job pins no Visual Studio generator: the generator name depends on which
+A second job, `build-asset-migrator-linux`, builds the same sources on
+`ubuntu-22.04` against the aqt `linux_gcc_64` Qt 6.8.3 kit, runs
+`re1am_selftest selftest`, and packs the GUI as an AppImage with
+`linuxdeploy` + `linuxdeploy-plugin-qt` (Qt libraries and the xcb platform
+plugin bundled). It publishes `asset-migrator-<version>-linux-x86_64.tar.gz`:
+the AppImage, `re1am_selftest`, this README and the licences. 22.04 rather than
+the game's 24.04 reference image keeps the glibc floor at 2.35. ffmpeg is not
+bundled here either.
+
+The Windows job pins no Visual Studio generator: the generator name depends on which
 Visual Studio the runner image ships (17 for VS 2022, 18 for VS 2026) and CMake
 resolves the instance through its own probe, which is what broke when the image
 moved. Ninja needs no such probe.
