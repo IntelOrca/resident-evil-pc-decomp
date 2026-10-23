@@ -2482,7 +2482,7 @@ void em_scd_behavior_rocket_death(void)
     char sub = (char)ty_sub();
 
     if (sub == 0) {
-        ty_flags() |= 8;                       // stop drawing the intact body
+        ty_flags() |= 8;                      // stop drawing the intact body
         ty_sub() = 1;
         ty_frame() = 0;
         eub(ENTITY, 0xbf) = 0;
@@ -2532,10 +2532,20 @@ void em_scd_behavior_rocket_death(void)
         ENTITY->speed.x = (short)((cam[0] - ei(ENTITY, 0x34)) / 0x32);
         ENTITY->speed.y = (short)((short)cam[1] + (short)((1000 - ei(ENTITY, 0x38)) / 0x32));
         ENTITY->speed.z = (short)((cam[2] - ei(ENTITY, 0x3c)) / 0x32);
-        return;
-    }
 
-    if (sub != 1) {
+        // NO return here: the original falls straight into the sub-1 body
+        // (0x0045eb01 stores speed.z, 0x0045eb0a is sub 1's `ticks == 2` test).
+        // So the first blast frame runs in the SAME call, before any joint
+        // compose: Joint_move's blend (counter 7) still reaches the five limbs,
+        // because the freeze bit 0x10 is only set by the compose, and lerps
+        // their tumble angles 1/8 of the way to the animation (0x40 -> 0x38,
+        // 0x60 -> 0x54), and tyrant_limb_update applies its first step. The
+        // compose that follows then freezes each limb as parent * RotMatrix(
+        // blended tumble). Returning here let the compose freeze them in the
+        // animation pose with the full tumble, and every limb landed in a
+        // different orientation from the original's (checked against a memory
+        // capture of the original: all five world matrices match this path).
+    } else if (sub != 1) {
         if (sub != 2) return;
         // Smoulder, then hand the room the death.
         if (ty_ticks() > 200) {
@@ -2563,7 +2573,7 @@ void em_scd_behavior_rocket_death(void)
         return;
     }
 
-    // ---- sub 1: the blast ----
+    // ---- sub 1: the blast (also reached from sub 0, see above) ----
     if (ty_ticks() == 2) {
         Play3DSnd(2, 0x19, 0, (int)&ei(ENTITY, 0x34));
         Play3DSnd(2, 0x1a, 0, (int)&ei(ENTITY, 0x34));
